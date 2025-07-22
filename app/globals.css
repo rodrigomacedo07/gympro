@@ -1,0 +1,1691 @@
+/* ARQUIVO: app/globals.css - VERSÃO FINAL E COMPLETA DE TODOS OS ESTILOS */
+
+:root {
+  /* Fontes */
+  --font-montserrat: "Montserrat", sans-serif;
+  --font-inter: "Inter", sans-serif;
+
+  /* Cores de UI */
+  --bg-color: #f4f4f7;
+  --surface-color: #ffffff;
+  --border-color: #e5e7eb;
+  --border-color-darker: #d1d5db;
+  --table-bg-color: #f9fafb;
+  --table-header-bg-color: #f3f4f6;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-status-aguardando: #000000;
+  --accent-color-dark: #374151;
+
+  /* Cores de Status */
+  --status-disponivel: #4caf50;
+  --status-aguardando: #f9ff07;
+  --status-em-treinamento: #f57c00;
+
+  /* Cores de Ação */
+  --primary-action-color: #3b82f6;
+  --primary-action-hover-color: #2563eb;
+  /*  --plan-color-0: #4f46e5; /* Indigo */
+  /*  --plan-color-1: #0d9488; /* Teal */
+  /*  --plan-color-2: #64748b; /* Slate */
+  /*  --plan-color-3: #db2777; /* Fuchsia */
+
+  /* Escala de Espaçamento */
+  --space-xs: 0.25rem; /* 4px */
+  --space-sm: 0.5rem; /* 8px */
+  --space-md: 0.75rem; /* 12px */
+  --space-lg: 1rem; /* 16px */
+  --space-xl: 1.25rem; /* 20px */
+
+  /* Raios de Borda */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-full: 9999px; /* Para pílulas e círculos */
+}
+
+body {
+  font-family: var(--font-inter);
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.font-montserrat {
+  font-family: var(--font-montserrat);
+}
+
+.container {
+  max-width: 1200px;
+  margin: auto;
+  padding: 1.25rem;
+}
+/* =============================================================== */
+/* COMPONENTES GLOBAIS (adicione esta nova seção)                  */
+/* =============================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem; /* Padding base em rem (8px 16px) */
+  border-radius: var(--radius-md); /* Raio de borda padrão */
+  border: 1px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-decoration: none; /* Para casos onde o botão é um link <a> */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); /* Sombra sutil inicial */
+}
+
+/* Novo modificador para botões de ícone circulares */
+.btn-icon {
+  /* Aparência base para TODOS os botões de ícone */
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary); /* Define a cor padrão para o SVG (cinza) */
+
+  /* Formato e tamanho */
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.btn-icon:hover {
+  background-color: var(--border-color);
+  color: var(--text-primary); /* Escurece o ícone no hover */
+}
+
+/* Regra específica para o ícone de deletar no hover */
+.btn-icon.btn-delete:hover {
+  background-color: #fee2e2;
+  color: #ef4444;
+  border-color: #fecaca;
+}
+/* NOVA REGRA: Controla o tamanho do SVG DENTRO de qualquer .btn-icon */
+.btn-icon svg {
+  width: 1.25rem; /* 20px */
+  height: 1.25rem; /* 20px */
+}
+/* =============================================================== */
+/* ESTILOS DO DASHBOARD PRINCIPAL                                  */
+/* =============================================================== */
+#dashboard-view header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+}
+#dashboard-view header h1 {
+  font-family: var(--font-montserrat);
+  color: var(--text-primary);
+  margin: 0;
+  font-weight: 700;
+}
+#pef-info {
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+#pef-info span {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.controls {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filters {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+/* Adicionar junto com seus outros estilos de botão */
+.btn.btn-sm {
+  font-size: 0.7rem; /* Reduz a fonte de 1rem (16px) para ~13px */
+  padding: 0.375rem 0.75rem; /* Reduz o padding vertical e horizontal (6px 12px) */
+}
+/* Adicionar ao final do globals.css */
+
+@media (max-width: 768px) {
+  .filters {
+    flex-wrap: nowrap; /* Impede que os botões quebrem a linha */
+    overflow-x: auto; /* Adiciona a rolagem horizontal */
+    padding-bottom: 0.75rem; /* Adiciona um espaço para a barra de rolagem não ficar colada */
+
+    /* Estilos para customizar e esconder a barra de rolagem, mantendo a funcionalidade */
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .filters::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
+}
+.filter-btn {
+  background-color: var(--surface-color);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.625rem 0.9375rem;
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); /* Sombra sutil inicial */
+  transform: translateY(0); /* Posição inicial */
+  transition: all 0.15s ease-out; /* Transição mais rápida para cliques */
+}
+.filter-btn.active {
+  background-color: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--surface-color);
+  box-shadow: none; /* Remove a sombra para parecer "fixo" */
+  transform: translateY(0);
+}
+.filter-btn:hover {
+  border-color: var(--accent-color-dark);
+  color: var(--text-primary);
+  transform: translateY(-1px); /* Levanta um pouco menos que antes */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+.search-wrapper {
+  flex-grow: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.filter-btn.active:hover {
+  background-color: var(--text-primary);
+  color: var(--surface-color);
+  transform: translateY(0);
+  box-shadow: none;
+}
+#name-filter {
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 10px 40px 10px 15px;
+  border-radius: var(--radius-lg);
+  font-family: var(--font-inter);
+  font-size: 0.9em;
+  font-weight: 400;
+  width: 100%;
+}
+#name-filter::placeholder {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.clear-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 15px;
+  background: transparent;
+  border: none;
+  font-size: 1.5em;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+.aluno-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-xl);
+}
+.nenhum-aluno {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 40px 0;
+  grid-column: 1 / -1;
+}
+.aluno-card {
+  background-color: var(--surface-color);
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: none;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease-in-out;
+}
+.aluno-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.aluno-card h3 {
+  font-family: var(--font-montserrat);
+  margin: 0;
+  font-size: 1.25rem;
+}
+.card-options-wrapper {
+  position: relative;
+}
+.options-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  color: var(--text-secondary);
+}
+.options-icon:hover {
+  color: var(--text-primary);
+}
+.options-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  width: 200px;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  padding: 10px 15px;
+  font-size: 0.9em;
+  color: var(--text-primary);
+  text-decoration: none;
+  background-color: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.menu-item:hover {
+  background-color: var(--bg-color);
+}
+.status-tag {
+  font-size: 0.8em;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  display: inline-block;
+}
+.status-tag-disponivel {
+  background-color: var(--status-disponivel);
+  color: white;
+}
+.status-tag-aguardando {
+  background-color: var(--status-aguardando);
+  color: var(--text-status-aguardando);
+}
+.status-tag-em-treinamento {
+  background-color: var(--status-em-treinamento);
+  color: white;
+}
+.pef-resp {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  margin-top: 15px;
+}
+.actions {
+  margin-top: var(--space-xl);
+  gap: var(--space-sm);
+  display: flex;
+}
+.action-btn {
+  flex-grow: 1;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font-weight: 700;
+  font-family: var(--font-inter);
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+.action-btn:hover {
+  background-color: var(--accent-color-dark);
+  color: var(--surface-color);
+  border-color: var(--accent-color-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+}
+.action-btn:focus-visible {
+  outline: 2px solid var(--accent-color-dark);
+  outline-offset: 2px;
+}
+.status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: 10px;
+}
+.status-timer {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.ritmo-treino {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.9em;
+  font-weight: 600;
+}
+.ritmo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.ritmo-no_ritmo {
+  color: #2e7d32;
+}
+.ritmo-no_ritmo .ritmo-dot {
+  background-color: var(--status-disponivel);
+}
+.ritmo-atrasado {
+  color: #c62828;
+}
+.ritmo-atrasado .ritmo-dot {
+  background-color: #d32f2f;
+}
+
+/* =============================================================== */
+/* ESTILOS DE MODAIS (SELEÇÃO DE PLANO)                            */
+/* =============================================================== */
+/* A sobreposição escura que cobre a tela */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+/* O contêiner branco do modal */
+.modal-content {
+  background-color: var(--surface-color);
+  padding: 1.25rem;
+  border-radius: var(--radius-lg);
+  width: 90%;
+  max-width: 500px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+.modal-content h2 {
+  font-family: var(--font-montserrat);
+  margin-top: 0;
+  margin-bottom: var[--space-sm];
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  text-align: center;
+}
+.modal-subtitle {
+  margin-top: 0;
+  margin-bottom: var[--space-md];
+  color: var(--text-secondary);
+}
+/* Container para os botões "Salvar" e "Cancelar" */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end; /* Mantém os botões alinhados à direita */
+  gap: var(--space-lg); /* ADICIONADO: Espaçamento entre os botões (ex: 12px) */
+  margin-top: 1.5rem; /* Convertido para rem */
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.25rem; /* Convertido para rem */
+}
+/* Botão primário (Salvar) */
+.modal-actions .btn-primary {
+  background-color: var(--accent-color-dark);
+  color: white;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Botão secundário (Cancelar) */
+.modal-actions .btn-secondary {
+  background-color: var(--bg-color);
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  font-weight: 600;
+  cursor: pointer;
+}
+/* =============================================================== */
+/* SOBRESCRITAS ESPECÍFICAS PARA COMPONENTES DENTRO DO MODAL       */
+/* =============================================================== */
+/* Aqui, anulamos os estilos de componentes reutilizados
+   que não queremos dentro do contexto do modal. */
+
+/* Remove a linha divisória e o padding inferior do card quando ele está no modal */
+.modal-content .exercise-edit-card {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* Remove o padding extra da 'card-section' que causava o espaçamento duplo */
+.modal-content .card-section {
+  padding: 0;
+}
+
+/* Opcional: Anula margens específicas de títulos dentro do modal, se necessário */
+.modal-content .exercise-edit-card h4 {
+  margin-bottom: 1.25rem; /* Ajuste conforme necessário */
+}
+.plan-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.plan-selection-list button {
+  width: 100%;
+  padding: 15px;
+  font-size: 1.1em;
+  font-weight: 600;
+  font-family: var(--font-inter);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.plan-selection-list button:hover {
+  background-color: var(--accent-color-dark);
+  color: var(--surface-color);
+  border-color: var(--accent-color-dark);
+  transform: scale(1.02);
+}
+.btn-voltar {
+  background-color: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 12px;
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 20px;
+}
+.btn-voltar:hover {
+  color: var(--text-primary);
+}
+.btn-icon-transparent {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: var(--space-xs); /* Pequeno respiro */
+}
+/* =============================================================== */
+/* CABEÇALHO PADRÃO DE PÁGINA INTERNA                              */
+/* =============================================================== */
+.page-header {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 25px;
+}
+.back-button {
+  /* Posicionamento flutuante */
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+
+  /* Aparência */
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 50%; /* Garante o formato circular */
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+
+  /* Tamanho */
+  width: 2.5rem; /* 40px */
+  height: 2.5rem; /* 40px */
+
+  /* Alinhamento do ícone SVG interno */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* Comportamento */
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.back-button:hover {
+  background-color: var(--bg-color);
+  border-color: var(--border-color-darker);
+}
+
+.back-button svg {
+  width: 1.5rem; /* 24px */
+  height: 1.5rem; /* 24px */
+}
+.header-text-container {
+  text-align: center;
+}
+.page-header h1 {
+  font-family: var(--font-montserrat);
+  font-size: 1.5rem;
+  margin: 0;
+}
+.page-header h2 {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* =============================================================== */
+/* ESTILOS PARA TELA DE TREINO AO VIVO                             */
+/* =============================================================== */
+.workout-view .workout-header {
+  padding: 0 0 30px 0;
+  margin-bottom: 25px;
+  border-bottom: 1px solid var(--border-color);
+}
+.workout-view .header-row-1 {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.workout-view .icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.workout-view .icon-btn:hover {
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+}
+.workout-view .icon-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+.workout-view .icon-btn.back-button {
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.workout-view .icon-btn.options-button {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.workout-view .title-group {
+  text-align: center;
+}
+.workout-view .title-group h2 {
+  font-family: var(--font-montserrat);
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+}
+.workout-view .title-group h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.workout-view .header-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xl);
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  margin-bottom: 15px;
+  padding: 0 5px;
+}
+.workout-view .time-info-group .label {
+  font-weight: 500;
+}
+.workout-view .time-info-group .value {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-left: 5px;
+}
+.workout-view .header-row-3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 5px;
+}
+.workout-view .progress-label {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.workout-view .progress-bar-container {
+  flex-grow: 1;
+  background-color: var(--border-color);
+  border-radius: 20px;
+  height: 10px;
+  overflow: hidden;
+}
+.workout-view .progress-bar-fill {
+  height: 100%;
+  border-radius: 20px;
+}
+.workout-view .exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.workout-view .exercise-item {
+  background-color: var(--surface-color);
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  border-left: 5px solid;
+  transition: all 0.3s ease;
+}
+.workout-view .exercise-item.status-nao-iniciado {
+  border-left-color: var(--status-disponivel);
+}
+.workout-view .exercise-item.status-executando {
+  border-left-color: var(--status-em-treinamento);
+}
+.workout-view .exercise-item.status-finalizado {
+  border-left-color: #6b7280;
+}
+.workout-view .exercise-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.workout-view .exercise-header h4 {
+  margin: 0;
+  font-size: 1.2em;
+  font-family: var(--font-montserrat);
+}
+.workout-view .exercise-header .icons {
+  display: flex;
+  gap: var(--space-sm);
+}
+.workout-view .exercise-header .icon {
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+}
+.workout-view .exercise-header .icon:hover {
+  color: var(--text-primary);
+}
+.workout-view .exercise-details {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding: 12px;
+  background-color: var(--bg-color);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  margin-top: 15px;
+}
+.workout-view .exercise-details strong {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 4px;
+}
+.workout-view .exercise-details-finalizado {
+  font-size: 1em;
+  color: var(--text-secondary);
+  text-align: left;
+  font-weight: 600;
+  padding: 12px 0;
+}
+.workout-view .exercise-controls {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: 15px;
+}
+.workout-view .btn-exercise-status {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 1em;
+  font-family: var(--font-inter);
+  transition: opacity 0.2s;
+  color: white;
+}
+.workout-view .btn-exercise-status:hover {
+  opacity: 0.85;
+}
+.workout-view .btn-exercise-status.start {
+  background-color: var(--status-disponivel);
+}
+.workout-view .btn-exercise-status.finish {
+  background-color: var(--status-em-treinamento);
+}
+.workout-view .workout-actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: 25px;
+}
+.workout-view .btn-finalizar-treino {
+  background-color: var(--accent-color-dark);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  flex-grow: 1;
+  padding: 15px;
+  font-size: 1.1em;
+}
+.progress-bar-fill.ritmo-no_ritmo {
+  background-color: var(--status-disponivel);
+}
+.progress-bar-fill.ritmo-atrasado {
+  background-color: #d32f2f;
+}
+
+/* =============================================================== */
+/* ESTILOS PARA PÁGINA DE GERENCIAMENTO DE PLANOS (LAYOUT MODELO)  */
+/* =============================================================== */
+.manage-plans-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+.filter-toggle-group {
+  display: inline-flex;
+  background-color: var(--surface-color);
+  border-radius: var(--radius-md);
+  padding: 5px;
+  border: 1px solid var(--border-color);
+}
+.filter-toggle-group button {
+  padding: 8px 15px;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  transition: all 0.2s ease-in-out;
+}
+.filter-toggle-group button.active {
+  background-color: var(--accent-color-dark);
+  color: var(--surface-color);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+.btn-primary-new {
+  background-color: var(--primary-action-color);
+  color: white;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s;
+  font-size: 0.9rem;
+}
+.btn-primary-new:hover {
+  background-color: var(--primary-action-hover-color);
+}
+
+.management-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.management-plan-accordion {
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  border-top-width: 4px;
+  border-top-style: solid;
+}
+.management-plan-accordion.plan-status-disponivel {
+  border-top-color: var(--status-disponivel);
+}
+.management-plan-accordion.plan-status-inativo {
+  border-top-color: var(--text-secondary);
+}
+.management-plan-accordion.plan-status-em-treinamento {
+  border-top-color: var(--status-em-treinamento);
+}
+.accordion-header-manage {
+  width: 100%; /* Garante que o botão ocupe toda a largura */
+  border: none; /* Remove a borda padrão do botão */
+  background: none; /* Remove o fundo padrão do botão */
+  font: inherit; /* Faz o botão usar a mesma fonte do resto da página */
+  color: inherit; /* Faz o botão usar a mesma cor de texto */
+  text-align: left; /* Alinha o texto à esquerda, como era na div */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.625rem 0.625rem 0 0.625rem; /* top | right | bottom | left;*/
+}
+
+.accordion-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.accordion-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.accordion-title-group h3 {
+  margin: 0;
+  font-family: var(--font-montserrat);
+  font-size: 1.2rem;
+}
+.plan-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  margin-top: 8px;
+}
+.chevron {
+  transition: transform 0.3s ease;
+  color: var(--text-secondary);
+}
+.chevron.expanded {
+  transform: rotate(180deg);
+}
+.chevron svg {
+  width: 28px;
+  height: 28px;
+}
+
+.plan-meta-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(
+    --text-secondary
+  ); /* Define a cor do texto para o cinza secundário */
+  padding-left: 42px; /* Adiciona um recuo à esquerda para alinhar com o título */
+}
+.plan-meta-info {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.card-action-icons {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-bottom: 1.25rem;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+  padding-top: 1.25rem;
+  justify-content: space-evenly;
+}
+/* Estilo para os botões de ação para remover bordas e fundo padrão */
+
+.card-action-icons .btn-start {
+  background-color: var(--status-disponivel);
+  color: white;
+  border: none;
+  padding: 10px 26px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-family: var(--font-inter);
+  font-size: 0.9rem;
+}
+.card-action-icons .btn-start:hover {
+  background-color: #388e3c;
+}
+
+.accordion-content-manage {
+  padding: 0px 0px 15px 0px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05); /* Sombra muito leve */
+  margin-top: 15px;
+  border-top: 2px solid var(--border-color); /* Usando uma variável existente */
+  background-color: var(--table-bg-color); /* Usando uma variável existente */
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.02s, max-height 0.2s;
+}
+
+.accordion-content-manage.expanded {
+  opacity: 1;
+  max-height: 2000px; /* valor grande o suficiente para todo o conteúdo */
+}
+/* Seleciona cada card de exercício dentro da lista expandida */
+.accordion-content-manage .exercise-edit-card {
+  /* Primeiro, resetamos qualquer estilo de card indesejado */
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0; /* O espaçamento será controlado pela borda/margem */
+  margin: 0;
+  overflow: visible;
+  border-top: 1px solid var(--border-color);
+}
+/* 3. Para o primeiro item da lista, removemos a primeira linha */
+.accordion-content-manage .exercise-edit-card:first-child {
+  border-top: none;
+}
+.accordion-content-manage .exercise-edit-card:not(:first-child)::before {
+  content: "";
+  display: block;
+  height: 1px;
+  background: var(--border-color);
+  margin: 0 20px; /* <-- recuo lateral de 10px */
+}
+/* Agora, adicionamos a linha divisória NO TOPO de cada card, EXCETO o primeiro */
+.accordion-content-manage .exercise-edit-card:not(:first-child) {
+  border-top: 0px solid var(--border-color);
+  padding-top: 0px; /* Espaço acima do exercício */
+  margin-top: 0px; /* Espaço abaixo do exercício anterior */
+}
+/* Para o último exercício da lista, removemos a borda inferior */
+.accordion-content-manage .exercise-edit-card:last-child {
+  border-bottom: none;
+}
+
+/* Faz o grupo do título (ícone + texto) crescer e empurrar os botões */
+.exercise-edit-card .accordion-title-group {
+  flex-grow: 1;
+}
+.exercise-edit-card .exercise-card-header h4 {
+  font-family: var(--font-inter);
+  font-weight: 600;
+  margin: 0;
+
+  /* Ajuste o valor do font-size como desejar */
+  font-size: 1rem; /* 1rem = 16px */
+}
+.divider-line {
+  border-bottom: 1px solid var(--border-color);
+  margin: 8px 10px;
+}
+
+.exercise-accordion {
+  border-top: 1px solid var(--border-color);
+}
+.exercise-accordion:first-child {
+  border-top: none;
+}
+.exercise-accordion .accordion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.exercise-accordion .accordion-header h4 {
+  margin: 0;
+  font-weight: 600;
+  font-family: var(--font-inter);
+  color: var(--text-primary);
+  font-size: 120px;
+  text-align: left; /* Garante alinhamento à esquerda */
+  flex-grow: 1; /* Faz o título expandir e empurrar os ícones */
+}
+.exercise-details-table-wrapper {
+  position: relative;
+  overflow-x: auto;
+  margin-bottom: 10px;
+
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+.exercise-details-table-wrapper.scrolled-to-end {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+.exercise-details-table-wrapper:not(.scrolled-to-end) {
+  -webkit-mask-image: linear-gradient(to right, black 95%, transparent 100%);
+  mask-image: linear-gradient(to right, black 95%, transparent 100%);
+}
+.exercise-details-table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+.exercise-details-table-wrapper thead {
+  background-color: var(--table-header-bg-color);
+}
+.exercise-details-table-wrapper th,
+.exercise-details-table-wrapper td {
+  padding: 12px 15px;
+  text-align: left;
+  border: none;
+  font-size: 0.9rem;
+}
+.exercise-details-table-wrapper th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-color-darker);
+}
+.exercise-details-table-wrapper td {
+  color: var(--text-primary);
+}
+
+.nenhum-plano {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+  background-color: var(--surface-color);
+  border-radius: 12px;
+  border: 1px dashed var(--border-color-darker);
+}
+/* ARQUIVO: globals.css - Estilos para o Botão de Ação Flutuante (FAB) */
+
+/* 1. Adiciona um respiro no final da lista para o FAB não cobrir conteúdo */
+.management-plan-list {
+  /* Um padding de 90px garante espaço para o botão de 56px + margens */
+  padding-bottom: 90px;
+}
+
+/* 2. Estilos do botão flutuante */
+.fab-create-plan {
+  position: fixed; /* Fixa o botão na tela */
+  bottom: 30px; /* Distância da parte de baixo */
+  right: 30px; /* Distância da parte da direita */
+
+  width: 56px;
+  height: 56px;
+  background-color: var(--accent-color-dark); /* Azul padrão de ação */
+  color: white;
+  border-radius: 50%; /* Deixa o botão redondo */
+  border: none;
+
+  /* Sombra para dar o efeito de flutuação */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+
+  /* Centraliza o ícone '+' dentro do botão */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+  transition: transform 0.2s ease-in-out;
+  z-index: 1000; /* Garante que ele fique acima dos outros elementos */
+}
+
+.fab-create-plan:hover {
+  transform: scale(1.05); /* Efeito de crescimento ao passar o mouse */
+}
+/* ARQUIVO: globals.css - Estilos para o estado indisponível */
+
+/* Adiciona o seletor '.plan-status-indisponivel' à regra do cinza */
+.management-plan-accordion.plan-status-inativo,
+.management-plan-accordion.plan-status-indisponivel {
+  border-top-color: var(--text-secondary);
+}
+
+/* Estilo para o botão 'Iniciar Treino' quando estiver desabilitado */
+.card-action-icons .btn-start:disabled {
+  background-color: var(--border-color-darker); /* Fundo cinza claro */
+  color: var(--text-secondary); /* Texto cinza escuro */
+  cursor: not-allowed; /* Ícone de "não permitido" no mouse */
+  opacity: 0.8; /* Leve transparência para reforçar o estado */
+}
+/* ARQUIVO: globals.css - Estilos para a Tela de Edição de Plano */
+
+/* 1. Garanta que o container do card seja uma âncora de posicionamento */
+.plano-edit-page .exercise-edit-card {
+  position: relative;
+  background-color: var(--surface-color); /* <<< DEIXA O FUNDO BRANCO */
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem; /* Aumenta o respiro interno */
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05); /* Adiciona uma sombra sutil */
+  animation: fadeIn 0.3s ease-out; /* <<< APLICA A ANIMAÇÃO */
+}
+/* 2. Ajuste os inputs DENTRO da página de edição */
+.plano-edit-page .input-group input,
+.plano-edit-page .input-group textarea {
+ /* background-color: var(--bg-color); /* <<< DEIXA O FUNDO CINZA CLARO */
+  border-color: var(--border-color-darker);
+}
+/* 2. Crie uma classe específica para o posicionamento do botão de deletar */
+.exercise-card-delete-btn {
+  position: absolute;
+  top: 0.5rem; /* Ajustando a distância do topo */
+  right: 0.5rem; /* Ajustando a distância da direita */
+  color: var(--text-secondary); /* Define a cor cinza padrão para o ícone */
+  background: transparent; /* Garante que não tenha fundo */
+  border: none;
+  padding: var(--space-sm); /* Adiciona uma área de clique */
+  border-radius: 50%; /* Mantém a área de clique circular */
+  transition: color 0.2s ease-in-out, background-color 0.2s ease-in-out;
+}
+
+.exercise-card-delete-btn:hover {
+  color: #ef4444; /* Cor vermelha para indicar perigo */
+  background-color: #fee2e2; /* Fundo rosa bem claro para dar feedback */
+}
+.exercise-card-delete-btn svg {
+  width: 1rem; /* 16px */
+  height: 1rem; /* 16px */
+}
+
+.plano-edit-page .exercise-list-title {
+  font-family: var(--font-montserrat);
+  font-size: 1.25rem;
+  margin: 30px 0 5px 0;
+  color: var(--text-primary);
+}
+
+.plano-edit-page .exercise-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.exercise-edit-card {
+  background-color: transparent;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+  /* Adicionamos a linha divisória na parte de baixo e um padding vertical */
+  border-bottom: 1px solid var(--border-color);
+  padding: 0;
+}
+/* Para remover a linha do último item da lista, deixando o visual mais limpo */
+.plano-edit-page .exercise-edit-list .exercise-edit-card:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.exercise-edit-card h4 {
+  font-family: var(--font-montserrat);
+  font-size: 1.1rem;
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+/* Garante que o título não tenha margens que atrapalhem o alinhamento */
+.exercise-card-header h4 {
+  margin: 0;
+  font-family: var(--font-inter);
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 0px 0px 0px 020px;
+}
+
+/* Estilo para o cabeçalho do card */
+.exercise-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0;
+  align-items: center; /* Centraliza verticalmente */
+  background-color: transparent; /* Cinza bem claro para destacar */
+  padding: 0;
+  border-bottom: none;
+}
+/* Adicione esta nova regra */
+.exercise-card-header h4,
+.exercise-card-header .input-group {
+  flex-grow: 1; /* Faz o título ou o input crescer e ocupar o espaço vago */
+}
+/* Para alinhar os itens (Séries, Reps, Carga) na mesma linha */
+.exercise-details-text {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin: 0 0 8px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xl);
+}
+
+/* Ajuste para remover margens desnecessárias de dentro do card */
+.exercise-card-header .input-group,
+.exercise-card-body .input-group {
+  margin-bottom: 0;
+}
+.exercise-card-body .exercise-inputs .input-row {
+  margin-bottom: 0px; /* Mantém a margem entre as linhas de input */
+}
+/* Estilo para o corpo do card */
+.exercise-card-body {
+  padding: 0px 20px 10px;
+}
+.exercise-inputs .input-row {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: 15px;
+}
+
+.exercise-inputs .input-row .input-group {
+  flex: 1; /* Faz os 3 campos dividirem o espaço igualmente */
+}
+/* Nova regra para o label "Nome do Plano" */
+.input-group label[for="plano-nome"] {
+  font-size: 1.25rem; /* Aumenta o tamanho da fonte */
+  font-family: var(--font-montserrat);
+  font-weight: 700; /* Deixa em negrito */
+  color: var(--text-primary);
+}
+.input-group label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+}
+
+.input-group input,
+.input-group textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color-darker);
+  background-color: var(--table-bg-color);
+  font-size: 0.95rem;
+  font-family: var(--font-inter);
+}
+
+.form-actions {
+  margin-top: 20px;
+  padding-bottom: 30px; /* Garante espaço no final da página */
+  display: flex;
+}
+
+.form-actions .btn-save-plan {
+  flex-grow: 1; /* Faz o botão ocupar toda a largura */
+  padding: 15px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: white;
+  background-color: var(--accent-color-dark);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.form-actions .btn-save-plan:hover {
+  background-color: var(--text-primary);
+}
+/* Estilo para o novo botão de adicionar exercício */
+.btn-add-exercise {
+  width: 100%;
+  margin-top: 05px;
+  padding: 12px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  background-color: transparent;
+  border: 2px dashed var(--border-color-darker);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add-exercise:hover {
+  background-color: var(--table-bg-color);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+/* Pequeno ajuste no input do nome do exercício */
+.exercise-edit-card .input-group {
+  margin-bottom: 20px;
+}
+/* ARQUIVO: globals.css - Estilos para as seções do card de edição */
+
+/* Nova regra para as seções internas do card */
+.plano-edit-page.card-section {
+  padding: 1.25rem;
+}
+
+/* Adiciona uma linha divisória no topo de cada seção, EXCETO da primeira */
+.plano-edit-page.card-section:not(:first-child) {
+  border-top: 1px solid var(--border-color);
+}
+
+/* Ajuste no botão para remover a margem superior, pois agora o padding da seção já cria o espaço */
+.btn-add-exercise {
+  width: 100%;
+  margin-top: 0; /* Alterado de 15px/5px para 0 */
+  padding: 12px;
+  font-weight: 600;
+  /* ... resto dos estilos do botão ... */
+}
+/* ARQUIVO: globals.css - Estilos para os controles de expansão */
+
+.exercise-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 25px 0 15px 0;
+}
+
+.exercise-list-header .exercise-list-title {
+  margin: 0; /* Remove a margem do h3 para o alinhamento funcionar */
+}
+
+.expand-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.expand-controls button {
+  background: none;
+  border: none;
+  color: var(--primary-action-color);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 5px;
+}
+
+.expand-controls button:hover {
+  text-decoration: underline;
+}
+
+.expand-controls span {
+  color: var(--border-color-darker);
+  font-size: 0.8rem;
+}
+/* Para tablets e telas menores */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem; /* Reduz o padding lateral em telas menores */
+  }
+
+  .dashboard-grid,
+  .planos-list {
+    grid-template-columns: 1fr; /* Força uma única coluna */
+    gap: var(--space-lg);
+  }
+
+  .header h1 {
+    font-size: 1.5rem; /* Reduz o tamanho do título principal */
+  }
+}
+
+/* Para celulares */
+@media (max-width: 480px) {
+  body {
+    font-size: 14px; /* Ajusta o tamanho da fonte base */
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .header .filters {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .header .filters .btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+/* Adicione esta regra para resetar o estilo do botão do chevron */
+.chevron {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.card-text-action {
+  background: none;
+  border: none;
+  padding: var(--space-sm); /* Adiciona área de clique sem fundo */
+  color: var(--accent-color-dark);
+  font-weight: 600;
+  font-size: 0.9rem; /* << Diminui o tamanho da fonte */
+  cursor: pointer;
+}
+.card-text-action:hover {
+  text-decoration: underline;
+}
+.actions-container {
+  display: flex;
+  justify-content: flex-end; /* Alinha o conteúdo à direita */
+  width: 100%;
+  }
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* =============================================================== */
+/* ESTILOS PARA O MODAL DE HISTÓRICO                               */
+/* =============================================================== */
+
+.historico-lista {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 400px; /* Define uma altura máxima para a lista rolar */
+  overflow-y: auto; /* Adiciona a barra de rolagem vertical se necessário */
+}
+
+.historico-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.9rem;
+}
+
+.historico-item:last-child {
+  border-bottom: none;
+}
+
+/* Estilo para os dias sem treino */
+.historico-item.status--nao-realizado {
+  color: var(--text-secondary);
+}
+
+.historico-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.historico-data {
+  font-weight: 600;
+  min-width: 90px; /* Garante alinhamento da coluna */
+  text-transform: capitalize;
+}
+
+.historico-plano {
+  font-weight: 500;
+}
+
+.historico-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.historico-status-texto {
+  min-width: 80px; /* Garante alinhamento */
+}
+
+.suggestion-item {
+/*padding: 8px 12px;*/
+padding: 10px;
+cursor: pointer;
+/*list-style: none;*/ /* Remove marcadores de lista */
+}
+
+.suggestion-item:hover {
+background-color: #f0f0f0;
+}
+
+/* Container principal (mantém o layout existente) */
+.suggestions-wrapper {
+  position: absolute;
+  width: 100%;
+  z-index: 10;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+/* Mensagem de "vazio" (estilo minimalista) */
+.empty-message {
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  text-align: center;
+}
+
+/* Lista de sugestões (mantém seu estilo original) */
+.suggestions-list {
+  position: absolute;
+  top: 100%; /* Posiciona a lista logo abaixo do input */
+  left: 0;
+  right: 0; /* Garante que a lista tenha a mesma largura do wrapper (e do input) */
+  background-color: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  z-index: 10;
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+.suggestions-container {
+  position: absolute;
+  top: 100%; /* Posiciona logo abaixo do input */
+  left: 0;
+  right: 0; /* Garante que ocupe 100% da largura do pai (.autocomplete-wrapper) */
+  background: white;
+  border: 1px solid var(--border-color-darker);
+  border-top: none; /* Evita borda dupla */
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1); /* Sombra mais pronunciada para dar profundidade */
+  z-index: 100; /* Z-index alto para ficar sobre outros elementos */
+  max-height: 240px; /* Evita listas gigantescas */
+  overflow-y: auto; /* Permite rolagem se a lista for grande */
+}
+
+.no-results-placeholder {
+  padding: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  font-size: 0.9em;
+}
+/* Estilo específico para a mensagem de "nenhum exercício" */
+.no-results-message {
+  padding: 10px;
+  color: #888;
+  font-style: italic;
+}
+
+/* Estilos de validação */
+/* Efeito visual para campos inválidos */
+.invalid {
+  border-color: #ff4444;
+  background-color: #fff9f9;
+}
+
+.error-message {
+  color: #ff4444;
+  font-size: 0.8rem;
+  margin-top: 4px;
+  display: block;
+}
+
+[data-error] {
+  scroll-margin-top: 20px; /* Espaço para rolagem */
+}
+
+/* Animação para chamar atenção */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+.invalid:focus {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Crie um container para o input e a lista de sugestões */
+.autocomplete-wrapper {
+  position: relative;
+  width: 100%; /* Garante que o wrapper ocupe o espaço definido pelo pai */
+}
