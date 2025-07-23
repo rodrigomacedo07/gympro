@@ -51,13 +51,13 @@ interface Aluno {
   planos: Plano[];
   historico?: HistoricoItem[];
 }
-
-interface PEF {
+//Excluído pra garantir deploy da primeira versão no Vercel
+/*interface PEF {
   id: number;
   nome: string;
   is_estagiario: boolean;
   cref: string | null;
-}
+}*/
 
 interface ExercicioBiblioteca {
   id: number;
@@ -136,8 +136,8 @@ interface HistoricoItem {
   nomePlano: string; // Nome do plano executado (ou "Não houve treino")
   status: 'completo' | 'incompleto' | 'nao-realizado'; // O status do "farol"
 }
-
-type AlunoStatus = "disponivel" | "aguardando" | "em_treinamento";
+//Excluído pra garantir deploy da primeira versão no Vercel
+/*type AlunoStatus = "disponivel" | "aguardando" | "em_treinamento";*/
 
 type ExercicioError = {
   series?: string;
@@ -2741,8 +2741,7 @@ const handleFinishWorkout = useCallback(
         [campo]: valor,
       }));
     },
-    [planoEmEdicao]
-  );
+    [planoEmEdicao, validationErrors]);
 
   // Handler para os campos de um exercício específico dentro do plano
 const handleExercicioInputChange = useCallback(
@@ -2769,10 +2768,12 @@ const handleExercicioInputChange = useCallback(
       exercicios: exerciciosAtualizados,
     }));
   },
-  [planoEmEdicao]
-);
+  [planoEmEdicao, validationErrors]);
   const handleCriarNovoPlano = useCallback((aluno: Aluno) => {
     // 1. Cria um objeto de plano 'em branco' com valores padrão.
+  
+  //Excluído pra garantir deploy da primeira versão no Vercel
+  /*
     const novoExercicio: ExercicioComEdicao = {
       id: Date.now() + 1,
       nome: "",
@@ -2781,7 +2782,7 @@ const handleExercicioInputChange = useCallback(
       carga: "",
       observacoes: "",
       isEditing: true,
-    };
+    };*/
     const novoPlano: Plano = {
       id: Date.now(), // Usamos um timestamp como ID temporário
       nome: "", // Começa com o nome em branco
@@ -2865,7 +2866,7 @@ const handleSavePlano = useCallback(() => {
   // 5. LIMPA OS ESTADOS DE EDIÇÃO E NAVEGA
   setPlanoEmEdicao(null);
   setAlunoEmEdicao(null);
-  setView({ type: 'gerenciar_planos', alunoId: alunoIdParaNavegar });}, [planoEmEdicao, alunoEmEdicao, alunos]);
+  setView({ type: 'gerenciar_planos', alunoId: alunoIdParaNavegar });}, [planoEmEdicao, alunoEmEdicao, setValidationErrors]);
 
 const handleExercicioSelect = useCallback(
   (exercicioIndex: number, suggestion: ExercicioBiblioteca) => {
@@ -2896,8 +2897,7 @@ const handleExercicioSelect = useCallback(
       exercicios: exerciciosAtualizados,
     }));
   },
-  [planoEmEdicao]
-);  
+  [planoEmEdicao, validationErrors]); 
 
   const onExcluirPlano = useCallback((alunoId: number, planoId: number) => {
     if (
