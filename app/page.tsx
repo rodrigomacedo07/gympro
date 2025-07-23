@@ -1430,12 +1430,10 @@ function GerenciarPlanosPage({
         </div>
 
         <div className="management-plan-list">
-          {planosFiltrados.map((plano, index) => {
+          {planosFiltrados.map((plano) => {
             // 1. Bloco de lógica para definir o status
-            {
-              /* ARQUIVO: page.tsx - Adicionando o status 'indisponivel' */
-            }
-
+            /* ARQUIVO: page.tsx - Adicionando o status 'indisponivel' */
+            
             let planStatus = "inativo"; // Cinza por padrão
             if (plano.ativo) {
               if (activeSession) {
@@ -1450,9 +1448,8 @@ function GerenciarPlanosPage({
                 planStatus = "disponivel"; // Verde para os planos ativos
               }
             }
-            {
-              /* Mostra o botão se o plano for 'disponivel' OU 'indisponivel' */
-            }
+            /* Mostra o botão se o plano for 'disponivel' OU 'indisponivel' */
+            
             {
               (planStatus === "disponivel" ||
                 planStatus === "indisponivel") && (
@@ -1673,19 +1670,7 @@ function ExercicioCard({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [wrapperRef]);
-  const fetchSuggestions = useCallback(
-    debounce((value: string) => {
-      if (value.length > 1) {
-        const filtered = initialMockData.exercicios_biblioteca.filter(ex =>
-          normalizeString(ex.nome).includes(normalizeString(value))
-        );
-        setSuggestions(filtered);
-      } else {
-        setSuggestions([]);
-      }
-    }, 300),
-    []
-  );
+
 
 const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   const value = e.target.value;
@@ -2051,7 +2036,7 @@ function PlanoEditView({
       }
       onPlanoChange("nome", e.target.value);
     }}
-    placeholder="Ex: Treino A - Peito e Tríceps"
+    placeholder='Ex: Treino A - Peito e Tríceps'
   />
   {validationErrors.planoNome && (
     <span className="error-message">{validationErrors.planoNome}</span>
@@ -2316,7 +2301,7 @@ export default function Page() {
       }
     });
     setActiveSessions(initialSessions);
-  }, []);
+  }, [alunos]);
   useEffect(() => {
     const rhythmInterval = setInterval(() => {
       setActiveSessions((currentSessions) => {
@@ -2718,11 +2703,7 @@ const handleFinishWorkout = useCallback(
     },
     [planoEmEdicao]
   );
-  const handleGoToEditPlano = (aluno: Aluno, plano: Plano) => {
-    setAlunoEmEdicao(aluno); // Guarda o aluno também, para o 'Salvar'
-    setPlanoEmEdicao(plano); // Guarda o plano que será editado
-    setView({ type: "editar_plano", alunoId: aluno.id });
-  };
+
 
   // Handler para os campos do próprio plano (ex: nome do plano)
   const handlePlanoInputChange = useCallback(
