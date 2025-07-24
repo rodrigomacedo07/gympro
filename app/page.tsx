@@ -2269,15 +2269,25 @@ export default function Page() {
   const [alunoEmEdicao, setAlunoEmEdicao] = useState<Aluno | null>(null);
   const [planoEmEdicao, setPlanoEmEdicao] = useState<Plano | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  useEffect(() => {
+useEffect(() => {
   console.log("📦 useEffect de criação de sessões executado");
   console.log("alunos no momento:", alunos);
-    const initialSessions: ActiveSession[] = [];
+
+  setActiveSessions((prevSessions) => {
+    const updatedSessions = [...prevSessions];
+
     alunos.forEach((aluno) => {
-      if (aluno.status === "em_treinamento") {
+      const jaExisteSessao = prevSessions.some(
+        (s) => s.alunoId === aluno.id
+      );
+if (jaExisteSessao) {
+  console.log(`🔁 Sessão já existe para aluno ${aluno.id}, não será recriada.`);
+}
+
+      if (!jaExisteSessao && aluno.status === "em_treinamento") {
         const primeiroPlanoAtivo = aluno.planos.find((p) => p.ativo);
         if (primeiroPlanoAtivo) {
-          initialSessions.push({
+          updatedSessions.push({
             alunoId: aluno.id,
             planoId: primeiroPlanoAtivo.id,
             startTime: aluno.status_timestamp,
@@ -2285,56 +2295,71 @@ export default function Page() {
               id: ex.id,
               status: "nao-iniciado",
             })),
-          });
+          });console.log(`✅ Sessão criada para aluno ${aluno.id}`);
         }
-      }
+       }
     });
-    setActiveSessions(initialSessions);
-  }, [alunos]);
-  useEffect(() => {
-    const rhythmInterval = setInterval(() => {
-      console.log("🌀 setInterval de ritmo executando...");
-console.log("ActiveSessions atuais:", activeSessions);
-console.log("Alunos atuais:", alunos.map(a => ({
-  id: a.id,
-  nome: a.nome,
-  status: a.status,
-  ritmo: a.ritmo
-})));
-      setActiveSessions((currentSessions) => {
-        if (currentSessions.length === 0) return currentSessions;
-        const rhythmUpdates = currentSessions.map((session) => {
-          const exercisesFinished = session.exercises.filter(
-            (e) => e.status === "finalizado"
-          ).length;
-          const aluno = alunos.find((a) => a.id === session.alunoId);
-          const plano = aluno?.planos.find((p) => p.id === session.planoId);
-          const totalExercises = plano ? plano.exercicios.length : 0;
-          const newRhythm = calculateRhythm(
-            new Date(session.startTime),
-            exercisesFinished,
-            totalExercises
-          );
-          return { alunoId: session.alunoId, newRhythm };
-        });
-        setAlunos((currentAlunos) =>
-          currentAlunos.map((aluno) => {
-            const update = rhythmUpdates.find((u) => u.alunoId === aluno.id);
-            if (
-              update &&
-              aluno.pef_responsavel_id &&
-              aluno.ritmo !== update.newRhythm
-            ) {
-              return { ...aluno, ritmo: update.newRhythm };
-            }
-            return aluno;
-          })
-        );
-        return currentSessions;
-      });
-    }, 1000);
-    return () => clearInterval(rhythmInterval);
-  }, [alunos, activeSessions]);
+
+    return updatedSessions;
+  });
+}, [alunos]);
+
+const alunosRef = useRef(alunos);
+const sessionsRef = useRef(activeSessions);
+
+useEffect(() => {
+  alunosRef.current = alunos;
+}, [alunos]);
+
+useEffect(() => {
+  sessionsRef.current = activeSessions;
+}, [activeSessions]);
+
+useEffect(() => {
+  const rhythmInterval = setInterval(() => {
+    console.log("🌀 setInterval de ritmo executando...");
+    console.log("ActiveSessions atuais:", sessionsRef.current);
+    console.log("Alunos atuais:", alunosRef.current);
+
+    const currentSessions = sessionsRef.current;
+    if (currentSessions.length === 0) return;
+
+    const rhythmUpdates = currentSessions.map((session) => {
+      const exercisesFinished = session.exercises.filter(
+        (e) => e.status === "finalizado"
+      ).length;
+
+      const aluno = alunosRef.current.find((a) => a.id === session.alunoId);
+      const plano = aluno?.planos.find((p) => p.id === session.planoId);
+      const totalExercises = plano ? plano.exercicios.length : 0;
+
+      const newRhythm = calculateRhythm(
+        new Date(session.startTime),
+        exercisesFinished,
+        totalExercises
+      );
+
+      return { alunoId: session.alunoId, newRhythm };
+    });
+
+    setAlunos((currentAlunos) =>
+      currentAlunos.map((aluno) => {
+        const update = rhythmUpdates.find((u) => u.alunoId === aluno.id);
+        if (
+          update &&
+          aluno.pef_responsavel_id &&
+          aluno.ritmo !== update.newRhythm
+        ) {
+          return { ...aluno, ritmo: update.newRhythm };
+        }
+        return aluno;
+      })
+    );
+  }, 1000);
+
+  return () => clearInterval(rhythmInterval);
+}, []); // dependências vazias — apenas cria o intervalo uma vez
+
   const [exercicioEmEdicao, setExercicioEmEdicao] = useState<{
     alunoId: number;
     planoId: number;
@@ -2445,48 +2470,35 @@ const handlePlanSelected = useCallback(
     [alunos, handleUpdateStatus, setActiveSessions, setView]
   );
 
-  const handleUpdateExerciseStatus = useCallback(
-    (
-      alunoId: number,
-      exerciseId: number,
-      newStatus: LiveExercise["status"]
-    ) => {
-      setActiveSessions((currentSessions) =>
-        currentSessions.map((session) => {
-          if (session.alunoId !== alunoId) return session;
+const handleUpdateExerciseStatus = (
+    alunoId: number,
+    exerciseId: number,
+    newStatus: LiveExercise["status"]
+  ) => {
+    setActiveSessions((currentSessions) =>
+      currentSessions.map((session) => {
+        if (session.alunoId !== alunoId) return session;
 
-          const updatedExercises = session.exercises.map((ex) => {
-            // Se for o exercício que queremos mudar o status
-            if (ex.id === exerciseId) {
-              // Criamos um novo objeto e garantimos que ele seja do tipo LiveExercise
-              const updatedExercise: LiveExercise = {
-                ...ex,
-                status: newStatus,
-              };
-              return updatedExercise;
-            }
-            // Se estamos iniciando um novo exercício, o anterior que estava 'executando' volta para 'nao-iniciado'
-            if (newStatus === "executando" && ex.status === "executando") {
-              const updatedExercise: LiveExercise = {
-                ...ex,
-                status: "nao-iniciado",
-              };
-              return updatedExercise;
-            }
-            return ex;
-          });
+        const updatedExercises = session.exercises.map((ex) => {
+          if (ex.id === exerciseId) {
+            const updatedExercise: LiveExercise = { ...ex, status: newStatus };
+            return updatedExercise;
+          }
+          if (newStatus === "executando" && ex.status === "executando") {
+            const updatedExercise: LiveExercise = { ...ex, status: "nao-iniciado" };
+            return updatedExercise;
+          }
+          return ex;
+        });
 
-          // Também garantimos que o objeto de sessão atualizado mantenha seu tipo
-          const updatedSession: ActiveSession = {
-            ...session,
-            exercises: updatedExercises,
-          };
-          return updatedSession;
-        })
-      );
-    },
-    []
-  ); // <-- Array de dependências vazio
+        const updatedSession: ActiveSession = {
+          ...session,
+          exercises: updatedExercises,
+        };
+        return updatedSession;
+      })
+    );
+  };
 const handleFinishWorkout = useCallback(
   (alunoId: number) => {
     // 1. Encontrar a sessão ativa e os dados do aluno/plano correspondentes.
