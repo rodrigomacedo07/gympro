@@ -1456,27 +1456,6 @@ function GerenciarPlanosPage({
                 planStatus = "disponivel"; // Verde para os planos ativos
               }
             }
-            /* Mostra o botão se o plano for 'disponivel' OU 'indisponivel' */
-            
-            {
-              (planStatus === "disponivel" ||
-                planStatus === "indisponivel") && (
-                <button
-                  onClick={() => onIniciarTreino(plano.id)}
-                  className="btn-start"
-                  // Desabilita o botão se o status for 'indisponivel'
-                  disabled={planStatus === "indisponivel"}
-                  // Adiciona uma dica de ferramenta para explicar por que está desabilitado
-                  title={
-                    planStatus === "indisponivel"
-                      ? "Finalize o treino em andamento para iniciar um novo"
-                      : "Iniciar Treino"
-                  }
-                >
-                  Iniciar Treino
-                </button>
-              );
-            }
             // 2. O 'return' explícito que estava faltando
             return (
               <div
@@ -2183,7 +2162,7 @@ const novosAlunos: Aluno[] = results.data
     </div>
   );
 }
-// Helper para formatar a data como "18.jul Sex"
+//* Helper para formatar a data como "18.jul Sex" */
 const formatarDataHistorico = (data: Date): string => {
   const dia = data.getDate();
   const mes = data.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
@@ -2385,7 +2364,7 @@ useEffect(() => {
  document.removeEventListener("mousedown", handleClickOutside);
  };
 
-}, [headerMenuRef]);
+}, []);
 
   const handleUpdateStatus = useCallback(
     (
