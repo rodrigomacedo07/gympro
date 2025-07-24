@@ -2141,7 +2141,7 @@ const novosAlunos: Aluno[] = results.data
         </div>
         <div>
           <p style={{ marginTop: 0, color: 'var(--text-secondary)' }}>
-            Selecione um arquivo .csv com uma coluna chamada "Nome".
+            Selecione um arquivo .csv com uma coluna chamada <code>Nome</code>;
             <br />
             <a href="/template.csv" download="template_importacao_alunos.csv" style={{ color: 'var(--primary-action-color)', fontWeight: '600' }}>
               Baixe um modelo de arquivo aqui.
@@ -2334,7 +2334,7 @@ console.log("Alunos atuais:", alunos.map(a => ({
       });
     }, 1000);
     return () => clearInterval(rhythmInterval);
-  }, []);
+  }, [alunos, activeSessions]);
   const [exercicioEmEdicao, setExercicioEmEdicao] = useState<{
     alunoId: number;
     planoId: number;
