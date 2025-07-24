@@ -12,7 +12,7 @@ import React, {
 } from "react";
 import Papa from 'papaparse';
 import { FixedSizeList as List } from 'react-window';
-import debounce from 'lodash.debounce';
+/*import debounce from 'lodash.debounce';*/
 
 // =======================================================
 // 1. SEUS TIPOS (Aluno, PEF, etc.)
@@ -1054,7 +1054,7 @@ function SelectPlanView({
   onCancel,
 }: {
   aluno: Aluno;
-  onSelectPlan: (planoId: number) => void;
+  onSelectPlan: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onCancel: () => void;
 }) {
   const planosAtivos = aluno.planos.filter((p) => p.ativo);
@@ -1071,7 +1071,7 @@ function SelectPlanView({
         <div className="plan-selection-list">
           {" "}
           {planosAtivos.map((plano) => (
-            <button key={plano.id} onClick={() => onSelectPlan(plano.id)}>
+            <button key={plano.id} value={plano.id} onClick={onSelectPlan}>
               {" "}
               {plano.nome}{" "}
             </button>
@@ -1132,6 +1132,9 @@ function LiveWorkoutView({
     onEditarExercicio: (alunoId: number, planoId: number, exercicioId: number) => void; 
 }) {
   const plano = aluno.planos.find((p) => p.id === session.planoId)!;
+  console.log("DEBUG - plano encontrado:", plano);
+console.log("DEBUG - session.planoId:", session.planoId);
+console.log("DEBUG - aluno.planos:", aluno.planos);
   const finishedCount = session.exercises.filter(
     (ex) => ex.status === "finalizado"
   ).length;
@@ -1209,6 +1212,11 @@ function LiveWorkoutView({
           const planoExercicio = plano.exercicios.find(
             (pe) => pe.id === liveEx.id
           );
+          console.log("🟡 DEBUG LiveWorkoutView:");
+console.log("liveEx.id:", liveEx.id);
+console.log("exercicioInfo:", exercicioInfo);
+console.log("planoExercicio:", planoExercicio);
+
           if (!exercicioInfo || !planoExercicio) return null;
           const detailsParts = [];
           if (planoExercicio.series)
@@ -2283,8 +2291,10 @@ export default function Page() {
   const [planoEmEdicao, setPlanoEmEdicao] = useState<Plano | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   useEffect(() => {
+  console.log("📦 useEffect de criação de sessões executado");
+  console.log("alunos no momento:", alunos);
     const initialSessions: ActiveSession[] = [];
-    initialMockData.alunos.forEach((aluno) => {
+    alunos.forEach((aluno) => {
       if (aluno.status === "em_treinamento") {
         const primeiroPlanoAtivo = aluno.planos.find((p) => p.ativo);
         if (primeiroPlanoAtivo) {
@@ -2304,6 +2314,14 @@ export default function Page() {
   }, [alunos]);
   useEffect(() => {
     const rhythmInterval = setInterval(() => {
+      console.log("🌀 setInterval de ritmo executando...");
+console.log("ActiveSessions atuais:", activeSessions);
+console.log("Alunos atuais:", alunos.map(a => ({
+  id: a.id,
+  nome: a.nome,
+  status: a.status,
+  ritmo: a.ritmo
+})));
       setActiveSessions((currentSessions) => {
         if (currentSessions.length === 0) return currentSessions;
         const rhythmUpdates = currentSessions.map((session) => {
@@ -2335,7 +2353,7 @@ export default function Page() {
         );
         return currentSessions;
       });
-    }, 30000);
+    }, 1000);
     return () => clearInterval(rhythmInterval);
   }, []);
   const [exercicioEmEdicao, setExercicioEmEdicao] = useState<{
@@ -2352,6 +2370,9 @@ const [isHeaderMenuOpen, setHeaderMenuOpen] = useState(false);
 const [isUploadModalOpen, setUploadModalOpen] = useState(false);
 const [alunoParaVerHistorico, setAlunoParaVerHistorico] = useState<Aluno | null>(null);
 // INCLUIR DENTRO DO COMPONENTE 'Page'
+  useEffect(() => {
+    console.log('ESTADO DA VIEW ATUALIZADO PARA:', view);
+  }, [view]);
 const headerMenuRef = useRef<HTMLDivElement>(null);
 useEffect(() => {
  function handleClickOutside(event: MouseEvent) {
@@ -2399,6 +2420,8 @@ useEffect(() => {
 
   const handleNavigateToWorkout = useCallback(
     (alunoId: number) => {
+      console.log('Botão Iniciar Treino clicado para o aluno:', alunoId); // <-- ADICIONE ESTA LINHA
+
       const aluno = alunos.find((a) => a.id === alunoId)!;
       if (aluno.status === "em_treinamento") {
         setView({ type: "workout", alunoId: alunoId });
@@ -2413,8 +2436,9 @@ useEffect(() => {
     },
     [alunos] // <-- Array de dependências com 'alunos'
   );
-  const handlePlanSelected = useCallback(
+const handlePlanSelected = useCallback(
     (alunoId: number, planoId: number) => {
+      debugger;
       const aluno = alunos.find((a) => a.id === alunoId);
       const plano = aluno?.planos.find((p) => p.id === planoId);
       if (!aluno || !plano) {
@@ -2435,9 +2459,11 @@ useEffect(() => {
         newSession,
       ]);
       handleUpdateStatus(null, alunoId, "em_treinamento", pefLogado.id);
+      console.log('Tudo pronto! Navegando para a tela de workout para o aluno:', alunoId);
+
       setView({ type: "workout", alunoId: alunoId });
     },
-    [alunos, handleUpdateStatus]
+    [alunos, handleUpdateStatus, setActiveSessions, setView]
   );
 
   const handleUpdateExerciseStatus = useCallback(
@@ -2970,7 +2996,7 @@ const handleExercicioSelect = useCallback(
       pageContent =
         activeAluno && activeSession ? (
           <LiveWorkoutView
-            session={activeSession}
+            session={activeSession!}
             aluno={activeAluno}
             onBack={handleBackToDashboard}
             onFinishWorkout={handleFinishWorkout}
@@ -2985,9 +3011,10 @@ const handleExercicioSelect = useCallback(
       pageContent = activeAluno ? (
         <SelectPlanView
           aluno={activeAluno}
-          onSelectPlan={(planoId: number) =>
-            handlePlanSelected(activeAluno.id, planoId)
-          }
+         onSelectPlan={(event) => {
+    const planoId = Number(event.currentTarget.value);
+    handlePlanSelected(activeAluno.id, planoId);
+}}
           onCancel={handleBackToDashboard}
         />
       ) : null;
