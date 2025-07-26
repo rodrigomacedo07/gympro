@@ -92,6 +92,7 @@ interface ExercicioComEdicao extends ExercicioPlano {
 }
 
 interface ExercicioCardProps {
+  index: number
   exercicio: ExercicioComEdicao;
   isExpanded: boolean;
   showActions: boolean;
@@ -101,11 +102,8 @@ interface ExercicioCardProps {
   isEditable?: boolean;
   onExercicioChange?: (campo: keyof ExercicioPlano, valor: string | number) => void;
   onSuggestionSelect?: (suggestion: ExercicioBiblioteca) => void; // <<< NOVA PROP
-  validationError?: {
-    nome?: string;
-    series?: string;
-    repeticoes?: string;
-  };
+  validationErrors?: Record<string, string>;
+
 }
 interface EditExerciseModalProps {
   exercicio: ExercicioComEdicao | null;
@@ -831,6 +829,28 @@ const initialMockData = {
         },
       ],
     },
+    {
+  id: 999,
+  nome: "Teste Rápido",
+  status: "em_treinamento",
+  status_timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // começou há 5min
+  pef_responsavel_id: 1,
+  ritmo: "no_ritmo",
+  planos: [
+    {
+      id: 1,
+      nome: "Plano Mock",
+      ativo: true,
+      exercicios: [
+        { id: 101, nome: "Supino", series: 3, repeticoes: "10", carga: "50", observacoes: "" },
+        { id: 102, nome: "Agachamento", series: 3, repeticoes: "12", carga: "60", observacoes: "" },
+        { id: 103, nome: "Remada", series: 3, repeticoes: "10", carga: "45", observacoes: "" },
+        { id: 104, nome: "Tríceps", series: 3, repeticoes: "10", carga: "30", observacoes: "" },
+        { id: 105, nome: "Rosca", series: 3, repeticoes: "12", carga: "25", observacoes: "" },
+      ],
+    },
+  ],
+}
   ],
 } as const;
 const pefLogado = initialMockData.treinadores[0];
@@ -1091,7 +1111,7 @@ function SelectPlanView({
 
 function calculateRhythm(
   startTime: Date,
-  exercisesFinished: number,
+  exercisesStarted: number,
   totalExercises: number
 ): "no_ritmo" | "atrasado" {
   const RHYTHM_TOLERANCE_MARGIN = 0.2;
@@ -1100,13 +1120,21 @@ function calculateRhythm(
   const timeElapsedMinutes = timeElapsedMs / (1000 * 60);
   if (
     timeElapsedMinutes < 1 ||
-    totalExercises === 0 ||
-    exercisesFinished === 0
+    totalExercises === 0
   ) {
     return "no_ritmo";
   }
   const timeRatio = timeElapsedMinutes / WORKOUT_DURATION_MINUTES;
-  const exerciseRatio = exercisesFinished / totalExercises;
+  const exerciseRatio = exercisesStarted / totalExercises;
+
+console.log(
+  `🧠 Ritmo calculado → exercícios: ${exercisesStarted}/${totalExercises}, ` +
+  `tempo: ${timeElapsedMinutes.toFixed(2)}min, ` +
+  `timeRatio: ${timeRatio.toFixed(2)}, ` +
+  `exerciseRatio: ${exerciseRatio.toFixed(2)}, ` +
+  `status: ${timeRatio > exerciseRatio + RHYTHM_TOLERANCE_MARGIN ? 'atrasado' : 'no_ritmo'}`
+);
+
   if (timeRatio > exerciseRatio + RHYTHM_TOLERANCE_MARGIN) {
     return "atrasado";
   }
@@ -1551,7 +1579,7 @@ function GerenciarPlanosPage({
                 >
                   {expandedItems[`plan-${plano.id}`] && (
                     <>
-                      {plano.exercicios.map((ex) => {
+                      {plano.exercicios.map((ex, index) => {
                         const libEx =
                           initialMockData.exercicios_biblioteca.find(
                             (e) => e.id === ex.id
@@ -1570,6 +1598,7 @@ function GerenciarPlanosPage({
                         return (
                           <ExercicioCard
                             key={exercicioParaCard.id}
+                            index={index}
                             exercicio={exercicioParaCard}
                             isExpanded={
                               !!expandedItems[
@@ -1632,6 +1661,7 @@ const normalizeString = (str: string) => {
 };
 
 function ExercicioCard({
+  index,
   exercicio,
   isExpanded,
   showActions,
@@ -1641,11 +1671,14 @@ function ExercicioCard({
   isEditable = false,
   onExercicioChange = () => {},
   onSuggestionSelect,
-  validationError
+  validationErrors
 }: ExercicioCardProps) {
+  const errorKey = `exercicios[${index}].nome`;
   const [suggestions, setSuggestions] = useState<ExercicioBiblioteca[]>([]);
   const [isSearchActive, setIsSearchActive] = useState(false); // <-- NOVO ESTADO AQUI
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+console.log(errorKey, validationErrors)
 
   // Fecha a lista de sugestões ao clicar fora
   useEffect(() => {
@@ -1707,15 +1740,18 @@ if (onSuggestionSelect) {
   <div className="input-group" data-error="exercicioNome" ref={wrapperRef}>
           <label>Nome do Exercício</label>
     <div className="autocomplete-wrapper">
-      <input
-        value={exercicio.nome}
-        onChange={handleSearchChange}
-        placeholder="Busque um exercício (ex: Supino)"
-        className={validationError?.nome ? "invalid" : ""}
-        autoComplete="off"
-      />
 
-            {exercicio.nome.trim().length > 1 && isSearchActive && !validationError?.nome && (
+    <input
+      value={exercicio.nome}
+      onChange={handleSearchChange}
+      placeholder="Busque um exercício (ex: Supino)"
+      className={validationErrors?.[errorKey] ? "invalid" : ""}
+      autoComplete="off"
+    />
+    {validationErrors?.[errorKey] && (
+      <span className="error-message">{validationErrors[errorKey]}</span>
+    )}
+            {exercicio.nome.trim().length > 1 && isSearchActive && !validationErrors?.nome && (
         <div className="suggestions-container">
           {suggestions.length > 0 ? (
             <List
@@ -1734,8 +1770,8 @@ if (onSuggestionSelect) {
         </div>
       )}
     </div>
-            {validationError?.nome && ( // Mensagem de erro
-      <span className="error-message">{validationError.nome}</span>
+            {validationErrors?.nome && ( // Mensagem de erro
+      <span className="error-message">{validationErrors.nome}</span>
     )}
           </div>
         </div>
@@ -1746,25 +1782,25 @@ if (onSuggestionSelect) {
               <div className="input-group">
                 <label>Séries</label>
                 <input
-                  className={validationError?.series ? "invalid" : ""}
+                  className={validationErrors?.series ? "invalid" : ""}
                   type="text"
                   value={exercicio.series}
                   onChange={(e) => onExercicioChange("series", e.target.value)}
                 />
-                  {validationError?.series && (
-                  <span className="error-message">{validationError.series}</span>
+                  {validationErrors?.series && (
+                  <span className="error-message">{validationErrors.series}</span>
                   )}
               </div>
               <div className="input-group">
                 <label>Reps</label>
                 <input
-                  className={validationError?.repeticoes ? "invalid" : ""}
+                  className={validationErrors?.repeticoes ? "invalid" : ""}
                   type="text"
                   value={exercicio.repeticoes}
                   onChange={(e) => onExercicioChange("repeticoes", e.target.value)}
                 />
-                  {validationError?.repeticoes && (
-                  <span className="error-message">{validationError.repeticoes}</span>
+                  {validationErrors?.repeticoes && (
+                  <span className="error-message">{validationErrors.repeticoes}</span>
                    )}
               </div>
               <div className="input-group">
@@ -2037,15 +2073,12 @@ function PlanoEditView({
           {plano.exercicios.map((ex, index) => (
             <ExercicioCard
               key={ex.id}
+              index={index}
               exercicio={ex}
               isEditable={true}
-                validationError={{
-    nome: validationErrors[`exercicios[${index}].nome`],
-    series: validationErrors[`exercicios[${index}].series`],
-    repeticoes: validationErrors[`exercicios[${index}].repeticoes`]
-  }}
+              validationErrors={validationErrors}
               onExercicioChange={(campo, valor) => onExercicioChange(index, campo, valor)}
-             onSuggestionSelect={(suggestion) => onExercicioSelect(index, suggestion)} // <<< CONECTANDO A NOVA PROP
+              onSuggestionSelect={(suggestion) => onExercicioSelect(index, suggestion)} // <<< CONECTANDO A NOVA PROP
               // Props de exclusão e visualização agora estão conectadas
               onDelete={() => onDeleteExercicio(ex.id)}
               isExpanded={!!expandedItems[`ex-${ex.id}`]}
@@ -2325,17 +2358,20 @@ useEffect(() => {
     if (currentSessions.length === 0) return;
 
     const rhythmUpdates = currentSessions.map((session) => {
-      const exercisesFinished = session.exercises.filter(
-        (e) => e.status === "finalizado"
-      ).length;
+const exercisesStarted = session.exercises.filter(
+  (e) => ["executando", "finalizado"].includes(e.status)
+).length;
 
       const aluno = alunosRef.current.find((a) => a.id === session.alunoId);
       const plano = aluno?.planos.find((p) => p.id === session.planoId);
       const totalExercises = plano ? plano.exercicios.length : 0;
 
+
+
+
       const newRhythm = calculateRhythm(
         new Date(session.startTime),
-        exercisesFinished,
+        exercisesStarted,
         totalExercises
       );
 
@@ -2828,12 +2864,17 @@ const handleSavePlano = useCallback(() => {
   // Isso garante ao TypeScript que, no resto da função, eles não são nulos.
   if (!planoEmEdicao || !alunoEmEdicao) return;
   
-  // >>> NOVO: VALIDAÇÃO DOS DADOS <<<
-  const { isValid, errors } = validatePlano(planoEmEdicao);
+  // >>> NOVO: VALIDAÇÃO DOS DADOS <<<,,
+  const {isValid, errors} = validatePlano(planoEmEdicao);
   setValidationErrors(errors);
-  if (!isValid) {  
-     return; // Interrompe o salvamento
-  }
+if (!isValid) {
+  // Coleta e organiza os erros para exibir no alerta
+  const mensagens = Object.entries(errors).map(([campo, msg]) => `• ${msg}`);
+  const listaDeErros = mensagens.join('\n');
+
+  alert(`🚫 O plano contém erro(s) e não pode ser salvo:\n\n${listaDeErros}`);
+  return; // Interrompe o salvamento
+}
   // 2. GUARDA O ID PARA NAVEGAÇÃO
   // Fazemos isso ANTES de limpar o estado, corrigindo o bug anterior.
   const alunoIdParaNavegar = alunoEmEdicao.id;
@@ -2869,18 +2910,33 @@ const handleSavePlano = useCallback(() => {
 const handleExercicioSelect = useCallback(
   (exercicioIndex: number, suggestion: ExercicioBiblioteca) => {
     if (!planoEmEdicao) return;
+
     const errorKey = `exercicios[${exercicioIndex}].nome`;
+
+    // Verifica se o exercício já foi adicionado (ignora o índice atual)
+    const isDuplicado = planoEmEdicao.exercicios.some((ex, idx) => {
+      return idx !== exercicioIndex && ex.id === suggestion.id;
+    });
+
+    if (isDuplicado) {
+      setValidationErrors((prev) => ({
+        ...prev,
+        [errorKey]: `${suggestion.nome} já está em outro card. Escolha outro exercício ou exclua o card.`,
+      }));
+      return; // Não atualiza o exercício duplicado
+    }
+
+    // Se não for duplicado, remove erro (caso exista) e atualiza
     if (validationErrors[errorKey]) {
-      setValidationErrors(prev => {
+      setValidationErrors((prev) => {
         const newErrors = { ...prev };
         delete newErrors[errorKey];
         return newErrors;
       });
     }
+
     const exerciciosAtualizados = planoEmEdicao.exercicios.map((ex, index) => {
-      // Encontra o exercício pela sua posição na lista
       if (index === exercicioIndex) {
-        // Retorna o exercício atualizado com o NOVO nome e NOVO id
         return {
           ...ex,
           nome: suggestion.nome,
@@ -2895,7 +2951,9 @@ const handleExercicioSelect = useCallback(
       exercicios: exerciciosAtualizados,
     }));
   },
-  [planoEmEdicao, validationErrors]); 
+  [planoEmEdicao, validationErrors]
+);
+
 
   const onExcluirPlano = useCallback((alunoId: number, planoId: number) => {
     if (

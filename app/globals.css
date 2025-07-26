@@ -1658,8 +1658,12 @@ background-color: #f0f0f0;
 /* Estilos de validação */
 /* Efeito visual para campos inválidos */
 .invalid {
-  border-color: #ff4444;
+  border-color: #ff4444 !important;
   background-color: #fff9f9;
+}
+
+.invalid:focus {
+  animation: shake 0.5s ease-in-out;
 }
 
 .error-message {
@@ -1678,10 +1682,6 @@ background-color: #f0f0f0;
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-5px); }
   40%, 80% { transform: translateX(5px); }
-}
-
-.invalid:focus {
-  animation: shake 0.5s ease-in-out;
 }
 
 /* Crie um container para o input e a lista de sugestões */
