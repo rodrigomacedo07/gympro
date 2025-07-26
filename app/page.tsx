@@ -2869,7 +2869,7 @@ const handleSavePlano = useCallback(() => {
   setValidationErrors(errors);
 if (!isValid) {
   // Coleta e organiza os erros para exibir no alerta
-  const mensagens = Object.entries(errors).map(([campo, msg]) => `• ${msg}`);
+ const mensagens = Object.values(errors).map((msg) => `• ${msg}`);
   const listaDeErros = mensagens.join('\n');
 
   alert(`🚫 O plano contém erro(s) e não pode ser salvo:\n\n${listaDeErros}`);
