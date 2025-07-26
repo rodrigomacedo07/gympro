@@ -1014,7 +1014,7 @@ function AlunoCard({
                 }}
               >
                 {" "}
-                Gerenciar Planos{" "}
+                Gerenciar Sessões de Treino{" "}
               </button>{" "}
               <button
       className="menu-item"
@@ -1148,6 +1148,7 @@ function LiveWorkoutView({
   onFinishWorkout,
   onUpdateExercise,
   onEditarExercicio,
+  onDeleteExercise,
 }: {
   session: ActiveSession;
   aluno: Aluno;
@@ -1158,6 +1159,7 @@ function LiveWorkoutView({
     status: LiveExercise["status"]
   ) => void;
     onEditarExercicio: (alunoId: number, planoId: number, exercicioId: number) => void; 
+    onDeleteExercise: (exerciseId: number) => void;
 }) {
   const plano = aluno.planos.find((p) => p.id === session.planoId)!;
   console.log("DEBUG - plano encontrado:", plano);
@@ -1289,7 +1291,11 @@ console.log("planoExercicio:", planoExercicio);
                   >
                     {editIcon}
                   </button>
-                  <button className="btn btn-icon" title="Excluir">
+                  <button 
+                    className="btn btn-icon btn-delete"
+                    title="Excluir"
+                    onClick={() => onDeleteExercise(liveEx.id)}
+                  >
                     {deleteIcon}
                   </button>
                 </div>
@@ -1444,7 +1450,7 @@ function GerenciarPlanosPage({
         <div className="header-text-container">
           {" "}
           <h1 className="font-montserrat">{aluno.nome}</h1>{" "}
-          <h2>Gerenciar Planos de Treino</h2>{" "}
+          <h2>Gerenciar Sessões de Treino</h2>{" "}
         </div>{" "}
       </header>
       <main>
@@ -1605,7 +1611,7 @@ function GerenciarPlanosPage({
                                 `ex-${plano.id}-${exercicioParaCard.id}`
                               ]
                             }
-                            // ATENÇÃO: Na tela de Gerenciar Planos, não mostramos os botões
+                            // ATENÇÃO: Na tela de Gerenciar Sessões de Treino, não mostramos os botões
                             showActions={true}
                             onToggleExpansion={() =>
                               toggleExpansion(
@@ -1644,7 +1650,7 @@ function GerenciarPlanosPage({
       <button
         onClick={() => onCriarPlano()} // A função onCriarPlano já foi passada como prop
         className="fab-create-plan"
-        title="Criar Novo Plano"
+        title="Criar Nova Sessão de Treino"
       >
         {addIcon}
       </button>
@@ -1751,24 +1757,25 @@ if (onSuggestionSelect) {
     {validationErrors?.[errorKey] && (
       <span className="error-message">{validationErrors[errorKey]}</span>
     )}
-            {exercicio.nome.trim().length > 1 && isSearchActive && !validationErrors?.nome && (
-        <div className="suggestions-container">
-          {suggestions.length > 0 ? (
-            <List
-              height={Math.min(200, suggestions.length * 36)}
-              itemCount={suggestions.length}
-              itemSize={36}
-              width="100%"
-            >
-              {SuggestionRow}
-            </List>
-          ) : (
-            <div className="no-results-placeholder">
-              Nenhum exercício encontrado
-            </div>
-          )}
-        </div>
-      )}
+{/* CONDIÇÃO AJUSTADA: Só mostra o container se a busca estiver ativa E se NÃO houver erro de validação para este campo */}
+{isSearchActive && !validationErrors?.[errorKey] && (
+  <div className="suggestions-container">
+    {suggestions.length > 0 ? (
+      <List
+        height={Math.min(200, suggestions.length * 36)}
+        itemCount={suggestions.length}
+        itemSize={36}
+        width="100%"
+      >
+        {SuggestionRow}
+      </List>
+    ) : (
+      <div className="no-results-placeholder">
+        Nenhum exercício encontrado
+      </div>
+    )}
+  </div>
+)}
     </div>
             {validationErrors?.nome && ( // Mensagem de erro
       <span className="error-message">{validationErrors.nome}</span>
@@ -2022,6 +2029,7 @@ function PlanoEditView({
   setValidationErrors,
 }: PlanoEditViewProps) {
 
+  const pageTitle = plano.nome ? "Editar Sessão de Treino" : "Criar Nova Sessão de Treino";
 
   // 3. ESTADO LOCAL PARA CONTROLAR OS CARDS EXPANDIDOS
   const [expandedItems, setExpandedItems] = useState<{
@@ -2041,7 +2049,7 @@ function PlanoEditView({
         </button>
         <div className="header-text-container">
           <h1 className="font-montserrat">{aluno.nome}</h1>
-          <h2>Criar Novo Plano</h2>
+          <h2>{pageTitle}</h2>
         </div>
       </header>
       <main>
@@ -2471,7 +2479,7 @@ useEffect(() => {
       if (planosAtivos.length > 0) {
         setView({ type: "select_plan", alunoId: alunoId });
       } else {
-        alert("Este aluno não possui planos de treino ativos!");
+        alert("Este aluno não possui sessão de treino ativa!");
       }
     },
     [alunos] // <-- Array de dependências com 'alunos'
@@ -2532,6 +2540,31 @@ const handleUpdateExerciseStatus = (
           exercises: updatedExercises,
         };
         return updatedSession;
+      })
+    );
+  };
+
+const handleDeleteExerciseFromSession = (alunoId: number, exerciseId: number) => {
+    // Confirmação com o usuário antes de proceder.
+    if (!window.confirm("Tem certeza que deseja remover este exercício do treino de hoje?")) {
+      return; // Interrompe a função se o usuário clicar em "Cancelar".
+    }
+
+    setActiveSessions(currentSessions =>
+      currentSessions.map(session => {
+        // Encontra a sessão do aluno correto.
+        if (session.alunoId === alunoId) {
+          // Filtra a lista de exercícios, mantendo apenas os que NÃO têm o ID a ser removido.
+          const updatedExercises = session.exercises.filter(
+            ex => ex.id !== exerciseId
+          );
+          
+          // Retorna a sessão com a lista de exercícios atualizada.
+          return { ...session, exercises: updatedExercises };
+        }
+        
+        // Para todas as outras sessões, retorna sem alteração.
+        return session;
       })
     );
   };
@@ -2975,9 +3008,45 @@ const handleExercicioSelect = useCallback(
     }
   }, []); // <-- Array de dependências vazio
 
-  const onEditarPlano = (planoId: number) =>
-    alert(`Funcionalidade 'Editar Plano ${planoId}' a ser implementada.`);
+const onEditarPlano = (planoId: number) => {
+  if (!activeAluno) {
+    console.error("Erro: Tentativa de editar um plano sem um aluno ativo na visão.");
+    return;
+  }
 
+  const planoOriginal = activeAluno.planos.find(p => p.id === planoId);
+  if (!planoOriginal) {
+    console.error(`Erro: Plano com ID ${planoId} não encontrado para o aluno ${activeAluno.nome}.`);
+    return;
+  }
+
+  // --- INÍCIO DA CORREÇÃO ---
+  // Passo extra: Transformar os dados do plano para o formato que a tela de edição espera.
+  const planoEnriquecidoParaEdicao = {
+    ...planoOriginal,
+    exercicios: planoOriginal.exercicios.map(ex => {
+      // Para cada exercício, encontramos seu nome na biblioteca.
+      const nomeExercicio = initialMockData.exercicios_biblioteca.find(libEx => libEx.id === ex.id)?.nome || 'Exercício não encontrado';
+
+      // Retornamos um objeto completo que o ExercicioCard espera.
+      return {
+        ...ex,
+        nome: nomeExercicio,
+        // Garantimos que campos opcionais tenham um valor padrão para evitar outros erros.
+        observacoes: ex.observacoes || "", 
+        isEditing: true // Opcional, mas bom para consistência.
+      };
+    })
+  };
+  // --- FIM DA CORREÇÃO ---
+
+  // Carregar os estados de edição com os dados JÁ ENRIQUECIDOS.
+  setAlunoEmEdicao(activeAluno);
+  setPlanoEmEdicao(planoEnriquecidoParaEdicao); // <<< USANDO O OBJETO CORRIGIDO
+
+  // Mudar a view para a tela de edição.
+  setView({ type: "editar_plano", alunoId: activeAluno.id });
+};
   const filteredAlunos = alunos.filter((aluno) => {
     const statusMatch =
       statusFilter === "todos" ||
@@ -3053,6 +3122,9 @@ const handleExercicioSelect = useCallback(
               handleUpdateExerciseStatus(activeAluno.id, exerciseId, status)
             }
             onEditarExercicio={handleEditExercicio}
+            onDeleteExercise={(exerciseId) => 
+          handleDeleteExerciseFromSession(activeAluno.id, exerciseId)}
+
           />
         ) : null;
       break;
