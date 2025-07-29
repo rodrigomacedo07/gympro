@@ -51,13 +51,15 @@ interface Aluno {
   planos: Plano[];
   historico?: HistoricoItem[];
 }
-//Excluído pra garantir deploy da primeira versão no Vercel
-/*interface PEF {
+interface PEF {
   id: number;
   nome: string;
   is_estagiario: boolean;
   cref: string | null;
-}*/
+  roles: ('admin' | 'pef')[];
+  status: 'ativo' | 'inativo';
+  cpf: string;
+}
 
 interface ExercicioBiblioteca {
   id: number;
@@ -144,14 +146,6 @@ type ExercicioError = {
 
 const validateExercicio = (exercicio: ExercicioComEdicao): { isValid: boolean; errors: ExercicioError } => {
   const errors: ExercicioError = {};
-
-  if (!String(exercicio.series).trim() || isNaN(Number(exercicio.series))) {
-    errors.series = "Obrigatório e numérico";
-  }
-
-  if (!String(exercicio.repeticoes).trim()) {
-    errors.repeticoes = "Obrigatório";
-  }
 
   return {
     isValid: Object.keys(errors).length === 0,
@@ -853,7 +847,8 @@ const initialMockData = {
 }
   ],
 } as const;
-const pefLogado = initialMockData.treinadores[0];
+
+
 
 // =======================================================
 // 3. SEUS COMPONENTES (AlunoCard, ExercicioCard, PlanoEditView, etc.)
@@ -890,12 +885,16 @@ function useTimeAgo(timestamp: string) {
 }
 function AlunoCard({
   aluno,
+  treinadores,
+  pefLogado,
   onUpdateStatus,
   onNavigateToWorkout,
   onGerenciarPlanos,
   onVerHistorico,
 }: {
   aluno: Aluno;
+  treinadores: PEF[];
+  pefLogado: PEF;
   onUpdateStatus: (
     event: React.MouseEvent<HTMLButtonElement>,
     alunoId: number,
@@ -915,7 +914,7 @@ function AlunoCard({
   };
   const timeInStatus = useTimeAgo(aluno.status_timestamp);
   const getPefFullNameById = (id: number) => {
-    const pef = initialMockData.treinadores.find((p) => p.id === id);
+    const pef = treinadores.find((p) => p.id === id); // <<< USE A PROP AQUI
     return pef
       ? `${pef.nome.split(" ")[0]} ${pef.nome.split(" ").slice(-1)[0]}`
       : "N/A";
@@ -980,7 +979,7 @@ function AlunoCard({
   };
   return (
     <div
-      className="aluno-card"
+      className="info-card"
       onClick={handleCardClick}
       style={{
         cursor: aluno.status === "em_treinamento" ? "pointer" : "default",
@@ -989,7 +988,7 @@ function AlunoCard({
       {" "}
       <div className="card-header">
         {" "}
-        <h3 className="font-montserrat">{aluno.nome}</h3>{" "}
+        <h3 className="title-card">{aluno.nome}</h3>{" "}
         <div className="card-options-wrapper" ref={menuRef}>
           {" "}
           <button
@@ -1067,6 +1066,203 @@ function AlunoCard({
     </div>
   );
 }
+function PefCard({
+  pef,
+  onEdit,
+  onToggleStatus,
+  onResetPassword,
+}: {
+  pef: PEF;
+  onEdit: () => void;
+  onToggleStatus: () => void;
+  onResetPassword: () => void;
+}) {
+  const isAtivo = pef.status === 'ativo';
+
+  // Ícone para reset de senha (exemplo, podemos criar um novo se preferir)
+  const resetIcon = (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 11.88V12a8 8 0 1 1-2.9-6.32" />
+      <path d="M22 4L12 14.01l-3-3" />
+    </svg>
+  );
+
+  return (
+    <div className="info-card">
+      <div className="card-header">
+        <h3>{pef.nome}</h3>
+
+        {/* Adicionamos este wrapper para espelhar a estrutura do AlunoCard.
+          Ele serve como o segundo item que o flexbox precisa para alinhar
+          o título à esquerda corretamente.
+        */}
+        <div className="card-options-wrapper">
+          {/* Futuramente, se o PefCard precisar de um menu, ele virá aqui. */}
+        </div>
+      </div>
+
+      <div className="card-body">
+        <div className="status-line">
+          {/* Tag de Status: Ativo/Inativo */}
+          <span className={`status-tag ${isAtivo ? 'status-tag-disponivel' : 'status-tag-inativo'}`}>
+            {isAtivo ? 'Ativo' : 'Inativo'}
+          </span>
+
+          {/* Tag de Admin (se aplicável) */}
+          {pef.roles.includes('admin') && (
+            <span className="status-tag status-tag-admin">Admin</span>
+          )}
+
+          {/* Tag de Estagiário (se aplicável) */}
+          {pef.is_estagiario && (
+            <span className="status-tag status-tag-estagiario">Estagiário</span>
+          )}
+        </div>
+
+        <div className="pef-details">
+          <span>CREF: {pef.cref || 'N/A'}</span>
+        </div>
+      </div>
+
+      <div className="actions">
+        <button onClick={onEdit} className="btn btn-icon" title="Editar PEF">
+          {editIcon} {/* <<< ÍCONE PADRÃO */}
+        </button>
+        <button onClick={onToggleStatus} className="btn btn-icon" title={isAtivo ? 'Desativar PEF' : 'Ativar PEF'}>
+          {isAtivo ? deactivateIcon : activateIcon} {/* <<< ÍCONES PADRÃO */}
+        </button>
+        <button onClick={onResetPassword} className="btn btn-icon" title="Resetar Senha">
+          {resetIcon} {/* <<< ÍCONE NOVO/PADRÃO */}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PefEditModal({
+  pef,
+  onClose,
+  onSave,
+}: {
+  pef: PEF;
+  onClose: () => void;
+  onSave: (pefAtualizado: PEF) => void;
+}) {
+  const [dadosEditados, setDadosEditados] = useState(pef);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [crefTemporario, setCrefTemporario] = useState<string | null>(null);
+  const handleChange = (campo: keyof PEF, valor: string | boolean) => {
+    setDadosEditados(dadosAtuais => ({ ...dadosAtuais, [campo]: valor }));
+  };
+const validatePefData = (pefData: PEF): Record<string, string> => {
+    const validationErrors: Record<string, string> = {};
+
+    if (!pefData.cpf?.trim()) {
+      validationErrors.cpf = "CPF é obrigatório.";
+    }
+
+    if (pefData.roles.includes('pef') && !pefData.is_estagiario && !pefData.cref?.trim()) {
+      validationErrors.cref = "CREF é obrigatório para PEFs formados.";
+    }
+
+    return validationErrors;
+  };
+  const handleSaveClick = () => {
+  // 1. Roda a validação com os dados mais recentes do formulário
+  const validationErrors = validatePefData(dadosEditados);
+  // 2. Atualiza o estado de erros para exibir ou limpar as mensagens na tela
+  setErrors(validationErrors);
+
+  // 3. Se o objeto de erros estiver vazio, chama a função onSave
+  if (Object.keys(validationErrors).length === 0) {
+    onSave(dadosEditados);
+  }
+};
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close-btn" onClick={onClose}>&times;</button>
+        {/* 1. Usando o Header Unificado */}
+        <div className="modal-header">
+          <h2 className="title-modal">Editar Perfil</h2>
+          <p className="subtitle-modal">{pef.nome}</p>
+        </div>
+
+        {/* 2. Usando o Body Unificado */}
+        <div className="modal-body">
+           <div className="input-group">
+              <label htmlFor="pef-nome">Nome</label>
+              <input
+                id="pef-nome"
+                type="text"
+                value={dadosEditados.nome}
+                onChange={(e) => handleChange('nome', e.target.value)}
+              />
+           </div>
+           <div className="input-group-checkbox">
+            <input
+              id="pef-estagiario"
+              type="checkbox"
+              checked={dadosEditados.is_estagiario}
+              onChange={(e) => {
+                const isChecked = e.target.checked;
+                handleChange('is_estagiario', isChecked);
+                // Se o PEF for marcado como estagiário, limpamos o campo CREF.
+                if (isChecked) {
+                  // Se marcou como estagiário, guardamos o CREF atual
+                  // e limpamos o campo.
+                  setCrefTemporario(dadosEditados.cref);
+                  handleChange('cref', '');
+                } else {
+                  // Se desmarcou, restauramos o CREF que guardamos.
+                  handleChange('cref', crefTemporario || '');
+                }
+              }}
+            />
+            <label htmlFor="pef-estagiario">Este profissional é um estagiário</label>
+          </div>
+          <div className="input-group">
+            <label htmlFor="pef-cref">CREF</label>
+            <input
+              id="pef-cref"
+              type="text"
+              value={dadosEditados.cref || ''}
+              onChange={(e) => handleChange('cref', e.target.value)}
+              className={errors.cref ? 'invalid' : ''}
+              disabled={dadosEditados.is_estagiario} // <<< LÓGICA CONDICIONAL
+              placeholder={
+                dadosEditados.is_estagiario 
+                  ? 'Não aplicável para estagiários' 
+                  : 'Ex: 012345-G/RJ'
+              } // <<< UX MELHORADO
+            />
+            {errors.cref && <span className="error-message">{errors.cref}</span>}
+          </div>
+          <div className="input-group">
+            <label htmlFor="pef-cpf">CPF</label>
+            <input
+              id="pef-cpf"
+              type="text"
+              value={dadosEditados.cpf || ''}
+              onChange={(e) => handleChange('cpf', e.target.value)}
+              placeholder="000.000.000-00"
+              className={errors.cpf ? 'invalid' : ''} // Reutilização do padrão de erro
+            />
+            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+          </div>
+          {/* Futuros campos irão aqui dentro do modal-body */}
+        </div>
+
+        {/* 3. Usando as Actions Unificadas */}
+        <div className="modal-actions">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSaveClick}>Salvar</button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
 
 function SelectPlanView({
   aluno,
@@ -1078,35 +1274,41 @@ function SelectPlanView({
   onCancel: () => void;
 }) {
   const planosAtivos = aluno.planos.filter((p) => p.ativo);
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
-      {" "}
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        {" "}
-        <h2 className="font-montserrat">Iniciar treino de {aluno.nome}</h2>{" "}
-        <p className="modal-subtitle">
-          {" "}
-          Selecione o plano de treino para a sessão de hoje:{" "}
-        </p>{" "}
+return (
+  <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+
+      {/* Adicionando o botão de fechar padrão */}
+      <button className="modal-close-btn" onClick={onCancel}>&times;</button>
+
+      <div className="modal-header">
+        <h2 className="title-modal">Iniciar Treino</h2>
+        <p className="subtitle-modal">{aluno.nome}</p>
+      </div>
+
+      <div className="modal-body">
+        {/* Adicionamos um parágrafo de instrução com o texto revisado */}
+        <p className="modal-intro">
+          Selecione o treino para a sessão de hoje:
+        </p>
+
         <div className="plan-selection-list">
-          {" "}
           {planosAtivos.map((plano) => (
             <button key={plano.id} value={plano.id} onClick={onSelectPlan}>
-              {" "}
-              {plano.nome}{" "}
+              {plano.nome}
             </button>
-          ))}{" "}
+          ))}
           {planosAtivos.length === 0 && (
-            <p className="nenhum-plano">Nenhum plano ativo encontrado.</p>
-          )}{" "}
-        </div>{" "}
-        <button className="btn-voltar" onClick={onCancel}>
-          {" "}
-          Cancelar{" "}
-        </button>{" "}
-      </div>{" "}
+            <p className="nenhum-plano" style={{textAlign: 'center'}}>Nenhum treino ativo encontrado.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Este modal não precisa de um rodapé .modal-actions, então o omitimos. */}
+
     </div>
-  );
+  </div>
+);
 }
 
 function calculateRhythm(
@@ -1181,58 +1383,52 @@ console.log("DEBUG - aluno.planos:", aluno.planos);
   return (
     <div className="container workout-view">
       {" "}
-      <div className="workout-header">
-        {" "}
-        <div className="header-row-1">
-          {" "}
-          <button className="back-button" onClick={onBack}>
+      <header className="page-header">
+        <div className="header-left">
+          <button onClick={onBack} className="back-button">
             {backIcon}
-          </button>{" "}
-          <div className="title-group">
-            {" "}
-            <h2 className="font-montserrat">{aluno.nome}</h2>{" "}
-            <h3>{plano.nome}</h3>{" "}
-          </div>{" "}
-          <button className="icon-btn options-button">{optionsIcon}</button>{" "}
-        </div>{" "}
+          </button>
+        </div>
+
+        <div className="header-text-container">
+          <h1 className="title-page">{aluno.nome}</h1>
+          <h2 className="subtitle-page">{plano.nome}</h2>
+        </div>
+      </header>
+
+      {/* 2. O conteúdo específico da sessão agora vive dentro do <main> */}
+      <main className="workout-session-details"> {/* Adicionamos uma classe para estilização futura */}
         <div className="header-row-2">
-          {" "}
           <div className="time-info-group">
-            {" "}
-            <span className="label">Início:</span>{" "}
+            <span className="label">Início:</span>
             <span className="value">
-              {" "}
               {new Date(session.startTime).toLocaleTimeString("pt-BR", {
                 hour: "2-digit",
                 minute: "2-digit",
-              })}{" "}
-            </span>{" "}
-          </div>{" "}
+              })}
+            </span>
+          </div>
           <div className="time-info-group">
-            {" "}
-            <span className="label">Tempo de treino:</span>{" "}
-            <span className="value">{timeInTraining.replace("há ", "")}</span>{" "}
-          </div>{" "}
-        </div>{" "}
+            <span className="label">Tempo de treino:</span>
+            <span className="value">{timeInTraining.replace("há ", "")}</span>
+          </div>
+        </div>
+
         <div className="header-row-3">
-          {" "}
           <span className="progress-label">
-            {" "}
-            {finishedCount}/{plano.exercicios.length}{" "}
-          </span>{" "}
+            {finishedCount}/{plano.exercicios.length}
+          </span>
           <div className="progress-bar-container">
-            {" "}
             <div
               className={`progress-bar-fill ritmo-${rhythmStatus}`}
               style={{ width: `${percentage}%` }}
-            ></div>{" "}
-          </div>{" "}
+            ></div>
+          </div>
           <span className={`progress-label ritmo-treino ritmo-${rhythmStatus}`}>
-            {" "}
-            <span className="ritmo-dot"></span> {rhythmStatus.replace("_", " ")}{" "}
-          </span>{" "}
-        </div>{" "}
-      </div>{" "}
+            <span className="ritmo-dot"></span> {rhythmStatus.replace("_", " ")}
+          </span>
+        </div>
+      </main>
       <div className="exercise-list">
         {" "}
         {sortedExercises.map((liveEx) => {
@@ -1449,8 +1645,8 @@ function GerenciarPlanosPage({
         </button>
         <div className="header-text-container">
           {" "}
-          <h1 className="font-montserrat">{aluno.nome}</h1>{" "}
-          <h2>Gerenciar Sessões de Treino</h2>{" "}
+          <h1 className="title-page">{aluno.nome}</h1>{" "}
+          <h2 className="subtitle-page">Gerenciar Sessões de Treino</h2>{" "}
         </div>{" "}
       </header>
       <main>
@@ -1900,6 +2096,9 @@ function EditExerciseModal({
   // 1. Estado interno para guardar as MUDANÇAS feitas pelo usuário.
   const [editedExercicio, setEditedExercicio] = useState(exercicio);
   const [errors, setErrors] = useState<ExercicioError>({});
+    // Buscamos as informações do exercício na biblioteca para usar no cabeçalho.
+  const exercicioInfo = initialMockData.exercicios_biblioteca.find(
+    (ex) => ex.id === editedExercicio?.id);
   // 2. Handler para atualizar o estado interno quando o usuário digita.
   const handleInputChange = (campo: keyof ExercicioPlano, valor: string) => {
     // A verificação de segurança agora é no estado interno
@@ -1917,9 +2116,12 @@ function EditExerciseModal({
   const handleSaveClick = () => {
     if (!editedExercicio) return;
 
+    // 1. Usamos a função de validação que JÁ EXISTE para exercícios
     const { isValid, errors: validationErrors } = validateExercicio(editedExercicio);
+    // 2. Atualizamos o estado de erros
     setErrors(validationErrors);
 
+    // 3. Se for válido, salvamos
     if (isValid) {
       onSave(editedExercicio);
     }
@@ -1929,26 +2131,16 @@ function EditExerciseModal({
     return null;
   }
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h2>Editar Exercício</h2>
+return (
+  <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <button className="modal-close-btn" onClick={onClose}>&times;</button>
+      <div className="modal-header">
+        <h2 className="title-modal">Editar Exercício</h2>
+        <p className="subtitle-modal">{exercicioInfo?.nome}</p>
+      </div>
 
-        <div
-          className="exercise-edit-card"
-          style={{ boxShadow: "none", border: "none" }}
-        >
-          <div className="card-section">
-            <h4>
-              {
-                initialMockData.exercicios_biblioteca.find(
-                  (ex) => ex.id === editedExercicio.id
-                )?.nome
-              }
-            </h4>
-          </div>
-
-          <div className="card-section">
+      <div className="modal-body">
             <div className="exercise-inputs">
               <div className="input-row">
                 {/* Inputs agora são 'controlados' pelo estado INTERNO 'editedExercicio' */}
@@ -1997,23 +2189,22 @@ function EditExerciseModal({
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="modal-actions">
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancelar
-          </button>
-          {/* 4. O botão Salvar agora envia o estado ATUALIZADO, e não a prop original. */}
-          <button
-            className="btn btn-primary"
-            onClick={handleSaveClick}
-          >
-            Salvar
-          </button>
-        </div>
+      <div className="modal-actions">
+        <button className="btn btn-secondary" onClick={onClose}>
+          Cancelar
+        </button>
+        <button
+          className="btn btn-primary"
+          onClick={handleSaveClick}
+        >
+          Salvar
+        </button>
       </div>
+
     </div>
-  );
+  </div>
+);
 }
 function PlanoEditView({
   aluno,
@@ -2048,8 +2239,8 @@ function PlanoEditView({
           {backIcon}
         </button>
         <div className="header-text-container">
-          <h1 className="font-montserrat">{aluno.nome}</h1>
-          <h2>{pageTitle}</h2>
+          <h1 className="title-page">{aluno.nome}</h1>
+          <h2 className="subtitle-page">{pageTitle}</h2>
         </div>
       </header>
       <main>
@@ -2173,16 +2364,20 @@ const novosAlunos: Aluno[] = results.data
   });
 };
 
-  return (
+return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ textAlign: 'left', maxWidth: '450px' }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h2 className="font-montserrat" style={{ margin: 0 }}>Incluir Alunos via CSV</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+
+        {/* Adicionando o botão de fechar padrão */}
+        <button className="modal-close-btn" onClick={onClose}>&times;</button>
+
+        <div className="modal-header">
+          <h2 className="title-modal">Incluir Alunos via CSV</h2>
         </div>
-        <div>
-          <p style={{ marginTop: 0, color: 'var(--text-secondary)' }}>
-            Selecione um arquivo .csv com uma coluna chamada <code>Nome</code>;
+
+        <div className="modal-body">
+          <p className="modal-intro">
+            Selecione um arquivo .csv com uma coluna chamada <code>Nome</code>.
             <br />
             <a href="/template.csv" download="template_importacao_alunos.csv" style={{ color: 'var(--primary-action-color)', fontWeight: '600' }}>
               Baixe um modelo de arquivo aqui.
@@ -2194,11 +2389,14 @@ const novosAlunos: Aluno[] = results.data
             <span>{selectedFile ? selectedFile.name : "Nenhum arquivo selecionado"}</span>
           </div>
         </div>
-        <div className="modal-actions" style={{justifyContent: 'flex-start', paddingTop: 'var(--space-md)', marginTop: 'var(--space-md)'}}>
+
+        <div className="modal-actions">
+          {/* O botão agora está dentro do rodapé padrão, alinhado à direita */}
           <button className="btn btn-primary" disabled={!selectedFile} onClick={handleStartImport}>
             Iniciar Importação
           </button>
         </div>
+
       </div>
     </div>
   );
@@ -2260,16 +2458,17 @@ function HistoricoModal({ aluno, onClose }: { aluno: Aluno; onClose: () => void;
     return ultimos30dias;
   }, [aluno.historico]);
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ textAlign: 'left', maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 className="font-montserrat" style={{ margin: 0 }}>Histórico de Treinos</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
-        </div>
-        <p style={{marginTop: 'var(--space-sm)', color: 'var(--text-secondary)', fontWeight: '600', borderBottom: '1px solid var(--border-color)', paddingBottom: 'var(--space-md)'}}>{aluno.nome}</p>
-        
-        {/* Lista de Histórico */}
+return (
+  <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-content" style={{ textAlign: 'left', maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+      <button className="modal-close-btn" onClick={onClose}>&times;</button>
+      <div className="modal-header">
+        <h2 className="title-modal">Histórico de Treinos</h2>
+        <p className="subtitle-modal">{aluno.nome}</p>
+      </div>
+
+      <div className="modal-body">
+        {/* A classe .modal-body agora fornecerá o padding necessário ao redor da lista */}
         <ul className="historico-lista">
           {historicoCompleto.map((item: HistoricoItem) => (
             <li key={item.id} className={`historico-item status--${item.status}`}>
@@ -2285,8 +2484,12 @@ function HistoricoModal({ aluno, onClose }: { aluno: Aluno; onClose: () => void;
           ))}
         </ul>
       </div>
+
+      {/* Este modal não precisa de uma seção de .modal-actions, então simplesmente a omitimos. */}
+
     </div>
-  );
+  </div>
+);
 }
 // =======================================================
 // 4. SEU COMPONENTE PRINCIPAL 'Page' FICA POR ÚLTIMO
@@ -2302,7 +2505,8 @@ export default function Page() {
       | "select_plan"
       | "workout"
       | "gerenciar_planos"
-      | "editar_plano";
+      | "editar_plano"
+      |"gerenciar_perfis";
     alunoId: number | null;
 }>({ type: "dashboard", alunoId: null });
   const [statusFilter, setStatusFilter] = useState("todos");
@@ -2310,6 +2514,33 @@ export default function Page() {
   const [alunoEmEdicao, setAlunoEmEdicao] = useState<Aluno | null>(null);
   const [planoEmEdicao, setPlanoEmEdicao] = useState<Plano | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+const [treinadores, setTreinadores] = useState<PEF[]>(
+  initialMockData.treinadores.map(pef => {
+    // Lógica para definir os papéis iniciais
+    const roles: ('admin' | 'pef')[] = ['pef']; // Todos são PEFs por padrão
+    if (pef.id === 1) {
+      roles.push('admin'); // Apenas Carlos Andrade (ID 1) é admin
+    }
+
+    return {
+      ...pef,
+      roles: roles,
+      status: 'ativo',
+      cpf: `000.000.000-${pef.id.toString().padStart(2, '0')}`, // CPF de exemplo para teste
+    };
+  })
+);
+const [pefEmEdicao, setPefEmEdicao] = useState<PEF | null>(null);
+const [pefFilter, setPefFilter] = useState('ativo');
+const [pefSearch, setPefSearch] = useState('')
+
+const pefLogado = treinadores.find(p => p.id === 1); // Simula o PEF de ID 1 (nosso admin) como logado
+
+// Trava de segurança para evitar que a aplicação quebre se o PEF não for encontrado
+if (!pefLogado) {
+  return <div>Carregando usuário...</div>;
+}  
+
 useEffect(() => {
   console.log("📦 useEffect de criação de sessões executado");
   console.log("alunos no momento:", alunos);
@@ -2790,7 +3021,6 @@ const handleFinishWorkout = useCallback(
     [planoEmEdicao]
   );
 
-
   // Handler para os campos do próprio plano (ex: nome do plano)
   const handlePlanoInputChange = useCallback(
     (campo: keyof Plano, valor: string) => {
@@ -2986,7 +3216,47 @@ const handleExercicioSelect = useCallback(
   },
   [planoEmEdicao, validationErrors]
 );
+const handleOpenEditPefModal = (pef: PEF) => {
+  setPefEmEdicao(pef);
+};
 
+const handleUpdatePef = (pefAtualizado: PEF) => {
+  setTreinadores(treinadoresAtuais =>
+    treinadoresAtuais.map(p => (p.id === pefAtualizado.id ? pefAtualizado : p))
+  );
+  setPefEmEdicao(null); // Fecha o modal
+};
+const handleTogglePefStatus = (pefId: number) => {
+  setTreinadores(treinadoresAtuais =>
+    treinadoresAtuais.map(pef => {
+      if (pef.id === pefId) {
+        // Se encontrarmos o PEF, invertemos seu status
+        const novoStatus = pef.status === 'ativo' ? 'inativo' : 'ativo';
+        return { ...pef, status: novoStatus };
+      }
+      return pef;
+    })
+  );
+};
+
+const handleResetPassword = (pefNome: string) => {
+  // 1. Confirmação robusta com o usuário (UX - Prevenção de Erros [Nielsen #5])
+  const confirmacao = window.confirm(
+    `A senha atual de '${pefNome}' será invalidada permanentemente. Deseja gerar uma nova senha?`
+  );
+
+  if (confirmacao) {
+    // 2. Geração de uma senha aleatória simples (em um caso real, usaríamos uma biblioteca de criptografia)
+    const novaSenha = Math.random().toString(36).slice(-8);
+
+    // 3. Exibição da nova senha e instrução para o admin (UX - Visibilidade do Status do Sistema [Nielsen #1])
+    alert(
+      `Nova senha para '${pefNome}':\n\n${novaSenha}\n\nCopie esta senha e envie para o usuário.`
+    );
+    // Em um sistema real, essa lógica enviaria a nova senha por e-mail e invalidaria a antiga no banco de dados.
+    // Como estamos apenas com dados mockados, o alert simula a conclusão do fluxo.
+  }
+};
 
   const onExcluirPlano = useCallback((alunoId: number, planoId: number) => {
     if (
@@ -3146,7 +3416,7 @@ const onEditarPlano = (planoId: number) => {
         <div className="container">
           <div id="dashboard-view">
             <header>
-              <h1 className="font-montserrat">GymPro</h1>
+              <h1 className="title-app">GymPro</h1>
   
   {/* Container para o menu e as informações do PEF */}
   <div style={{ position: 'relative' }} ref={headerMenuRef}>
@@ -3177,6 +3447,17 @@ const onEditarPlano = (planoId: number) => {
           {/* Opcional: Adicionar um ícone de upload aqui */}
           Incluir Aluno via CSV
         </button>
+            {pefLogado.roles.includes('admin') && (
+      <button
+        className="menu-item"
+        onClick={() => {
+          setView({ type: 'gerenciar_perfis', alunoId: null });
+          setHeaderMenuOpen(false);
+        }}
+      >
+        Gerenciar Perfis
+      </button>
+    )}
       </div>
     )}
   </div>
@@ -3250,6 +3531,8 @@ const onEditarPlano = (planoId: number) => {
                       <AlunoCard
                         key={aluno.id}
                         aluno={aluno}
+                        treinadores={treinadores}
+                        pefLogado={pefLogado}
                         onNavigateToWorkout={handleNavigateToWorkout}
                         onUpdateStatus={handleUpdateStatus}
                         onGerenciarPlanos={handleGerenciarPlanos}
@@ -3266,6 +3549,100 @@ const onEditarPlano = (planoId: number) => {
         </div>
       );
       break;
+case "gerenciar_perfis":
+  pageContent = (
+    <div className="container">
+      {/* Usando o page-header padrão para telas secundárias */}
+      <header className="page-header">
+        <button onClick={handleBackToDashboard} className="back-button">
+          {backIcon}
+        </button>
+        <div className="header-text-container">
+          <h1 className="title-page">Gerenciar Perfis</h1>
+          <h2 className="subtitle-page">Gerir Lista de Profissionais</h2>
+        </div>
+      </header>
+
+<main>
+  <div className="controls">
+    <div className="filters">
+      <button
+        className={`btn btn-sm filter-btn ${pefFilter === 'todos' ? 'active' : ''}`}
+        onClick={() => setPefFilter('todos')}
+      >
+        Todos
+      </button>
+      <button
+        className={`btn btn-sm filter-btn ${pefFilter === 'ativo' ? 'active' : ''}`}
+        onClick={() => setPefFilter('ativo')}
+      >
+        Ativos
+      </button>
+      <button
+        className={`btn btn-sm filter-btn ${pefFilter === 'inativo' ? 'active' : ''}`}
+        onClick={() => setPefFilter('inativo')}
+      >
+        Inativos
+      </button>
+    </div>
+
+    <div className="search-wrapper">
+      <input
+        type="text"
+        id="pef-name-filter"
+        placeholder="Filtrar por nome..."
+        value={pefSearch}
+        onChange={(e) => setPefSearch(e.target.value)}
+      />
+      {pefSearch && (
+        <button
+          className="clear-btn"
+          onClick={() => setPefSearch('')}
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  </div>
+
+  <div id="pef-list-container">
+    <div className="pef-list">
+      {treinadores
+        .sort((a, b) => {
+        // Regra 1: Ordenar por status ('ativo' vem antes de 'inativo')
+        if (a.status === 'ativo' && b.status === 'inativo') {
+          return -1; // 'a' vem primeiro
+        }
+        if (a.status === 'inativo' && b.status === 'ativo') {
+          return 1; // 'b' vem primeiro
+        }
+
+        // Regra 2: Se os status forem iguais, ordenar por nome (ordem alfabética)
+        // localeCompare é o método ideal para comparar strings alfabeticamente
+        return a.nome.localeCompare(b.nome);
+        })
+        .filter(pef => {
+          if (pefFilter === 'todos') return true;
+          return pef.status === pefFilter;
+        })
+        .filter(pef =>
+          pef.nome.toLowerCase().includes(pefSearch.toLowerCase())
+        )
+        .map(pef => (
+          <PefCard
+            key={pef.id}
+            pef={pef}
+            onEdit={() => handleOpenEditPefModal(pef)}
+            onToggleStatus={() => handleTogglePefStatus(pef.id)}
+            onResetPassword={() => handleResetPassword(pef.nome)}
+          />
+        ))}
+    </div>
+  </div>
+</main>
+    </div>
+  );
+  break;
   }
 
   return (
@@ -3280,15 +3657,24 @@ const onEditarPlano = (planoId: number) => {
       )}
       {/* NOVO: Modal de Upload de CSV (renderização correta) */}
       {isUploadModalOpen && (
-        <CsvUploadModal onClose={() => setUploadModalOpen(false)} 
-        onImportSuccess={handleAlunosImported}/>
+        <CsvUploadModal
+          onClose={() => setUploadModalOpen(false)} 
+          onImportSuccess={handleAlunosImported}
+        />
       )}
-          {alunoParaVerHistorico && (
-      <HistoricoModal 
-        aluno={alunoParaVerHistorico} 
-        onClose={() => setAlunoParaVerHistorico(null)} 
-      />
-    )}
+      {alunoParaVerHistorico && (
+        <HistoricoModal 
+          aluno={alunoParaVerHistorico} 
+          onClose={() => setAlunoParaVerHistorico(null)} 
+        />
+      )}
+      {pefEmEdicao && (
+        <PefEditModal
+          pef={pefEmEdicao}
+          onClose={() => setPefEmEdicao(null)}
+          onSave={handleUpdatePef}
+        />
+      )}
     </>
   );
 }

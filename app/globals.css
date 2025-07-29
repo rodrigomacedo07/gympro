@@ -25,10 +25,10 @@
   /* Cores de Ação */
   --primary-action-color: #3b82f6;
   --primary-action-hover-color: #2563eb;
-  /*  --plan-color-0: #4f46e5; /* Indigo */
-  /*  --plan-color-1: #0d9488; /* Teal */
-  /*  --plan-color-2: #64748b; /* Slate */
-  /*  --plan-color-3: #db2777; /* Fuchsia */
+  --plan-color-0: #271DD7; /* Chrysler blue */
+  --plan-color-1: #2962FF; /* Neon Blue */
+  --plan-color-2: #709DFF; /* Cornflower blue */
+  --plan-color-3: #db2777; /* Telemagenta */
 
   /* Escala de Espaçamento */
   --space-xs: 0.25rem; /* 4px */
@@ -72,6 +72,48 @@ select {
   margin: auto;
   padding: 1.25rem;
 }
+
+/* =============================================================== */
+/* SISTEMA DE TIPOGRAFIA                                         */
+/* =============================================================== */
+
+/* Título Principal da Aplicação (O Logo) */
+.title-app {
+  font-family: var(--font-montserrat);
+  font-size: 1.5rem; /* 24px */
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Títulos de Páginas Internas e Modais */
+.title-page,
+.title-modal {
+  font-family: var(--font-montserrat);
+  font-size: 1.25rem; /* 20px */
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Subtítulos de Páginas e Modais */
+.subtitle-page,
+.subtitle-modal {
+  font-size: 1rem; /* 16px */
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: var(--space-xs) 0 0 0;
+}
+
+/* Títulos dos Cards */
+.title-card {
+  font-family: var(--font-montserrat);
+  font-size: 1.15rem; /* ~18px - Sutilmente menor para mais hierarquia */
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
 /* =============================================================== */
 /* COMPONENTES GLOBAIS (adicione esta nova seção)                  */
 /* =============================================================== */
@@ -120,6 +162,7 @@ select {
   width: 1.25rem; /* 20px */
   height: 1.25rem; /* 20px */
 }
+
 /* =============================================================== */
 /* ESTILOS DO DASHBOARD PRINCIPAL                                  */
 /* =============================================================== */
@@ -131,12 +174,8 @@ select {
   padding-bottom: 15px;
   margin-bottom: 20px;
 }
-#dashboard-view header h1 {
-  font-family: var(--font-montserrat);
-  color: var(--text-primary);
-  margin: 0;
-  font-weight: 700;
-}
+/* Garante que o Logo principal mantenha seu destaque */
+
 #pef-info {
   text-align: right;
   color: var(--text-secondary);
@@ -166,21 +205,7 @@ select {
 }
 /* Adicionar ao final do globals.css */
 
-@media (max-width: 768px) {
-  .filters {
-    flex-wrap: nowrap; /* Impede que os botões quebrem a linha */
-    overflow-x: auto; /* Adiciona a rolagem horizontal */
-    padding-bottom: 0.75rem; /* Adiciona um espaço para a barra de rolagem não ficar colada */
 
-    /* Estilos para customizar e esconder a barra de rolagem, mantendo a funcionalidade */
-    -ms-overflow-style: none; /* IE and Edge */
-    scrollbar-width: none; /* Firefox */
-  }
-
-  .filters::-webkit-scrollbar {
-    display: none; /* Chrome, Safari and Opera */
-  }
-}
 .filter-btn {
   background-color: var(--surface-color);
   border-color: var(--border-color);
@@ -216,7 +241,7 @@ select {
   transform: translateY(0);
   box-shadow: none;
 }
-#name-filter {
+.search-wrapper input {
   background-color: var(--surface-color);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
@@ -227,7 +252,7 @@ select {
   font-weight: 400;
   width: 100%;
 }
-#name-filter::placeholder {
+.search-wrapper input::placeholder {
   color: var(--text-secondary);
   font-weight: 400;
 }
@@ -255,32 +280,14 @@ select {
   padding: 40px 0;
   grid-column: 1 / -1;
 }
-.aluno-card {
-  background-color: var(--surface-color);
-  padding: var(--space-xl);
-  border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  border: none;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s ease-in-out;
-}
-.aluno-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
-}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 10px;
 }
-.aluno-card h3 {
-  font-family: var(--font-montserrat);
-  margin: 0;
-  font-size: 1.25rem;
-}
+
 .card-options-wrapper {
   position: relative;
 }
@@ -346,7 +353,7 @@ select {
 .pef-resp {
   font-size: 0.9em;
   color: var(--text-secondary);
-  margin-top: 15px;
+  margin-top: var(--space-md);
 }
 .actions {
   margin-top: var(--space-xl);
@@ -415,10 +422,10 @@ select {
 }
 
 /* =============================================================== */
-/* ESTILOS DE MODAIS (SELEÇÃO DE PLANO)                            */
+/* COMPONENTE MODAL UNIFICADO                                      */
 /* =============================================================== */
-/* A sobreposição escura que cobre a tela */
 
+/* O overlay escuro de fundo. Já está bom, mantemos como está. */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -433,38 +440,68 @@ select {
   -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
 }
-/* O contêiner branco do modal */
+
+/* O container branco principal. Já está bom, mantemos como está. */
 .modal-content {
+  position: relative;
   background-color: var(--surface-color);
-  padding: 1.25rem;
+  padding: 0;
   border-radius: var(--radius-lg);
   width: 90%;
   max-width: 500px;
-  text-align: center;
+  text-align: left;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
-.modal-content h2 {
-  font-family: var(--font-montserrat);
-  margin-top: 0;
-  margin-bottom: var[--space-sm];
-  color: var(--text-primary);
-  font-size: 1.5rem;
-  text-align: center;
+
+/* ▼▼▼ NOVAS CLASSES UNIFICADAS ▼▼▼ */
+
+/* 1. O Cabeçalho Padrão do Modal */
+.modal-header {
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-lg);
 }
-.modal-subtitle {
-  margin-top: 0;
-  margin-bottom: var[--space-md];
+/* Regra para o título principal DENTRO do cabeçalho */
+.modal-header h2 {
+  font-family: var(--font-montserrat);
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+/* Regra para o subtítulo DENTRO do cabeçalho */
+.modal-header .modal-subtitle {
+  margin: var(--space-xs) 0 0 0;
+  font-weight: 600;
+  font-size: 1rem;
   color: var(--text-secondary);
 }
+
+/* 2. O Corpo Padrão do Modal */
+.modal-body {
+  padding: 1.25rem;
+}
+
+/* Regra para espaçamento de formulários DENTRO do corpo */
+.modal-body .input-group:not(:last-child) {
+    margin-bottom: var(--space-lg);
+}
+
+/* 3. O Rodapé Padrão de Ações do Modal */
 /* Container para os botões "Salvar" e "Cancelar" */
 .modal-actions {
   display: flex;
-  justify-content: flex-end; /* Mantém os botões alinhados à direita */
-  gap: var(--space-lg); /* ADICIONADO: Espaçamento entre os botões (ex: 12px) */
-  margin-top: 1.5rem; /* Convertido para rem */
+  justify-content: flex-end;
+  gap: var(--space-md);
+  padding: 1.25rem;
+  margin-top: 0; /* <<< ALTERAÇÃO: Resetamos a margem */
   border-top: 1px solid var(--border-color);
+  background-color: var(--bg-color); /* Um fundo sutil para diferenciar a área de ações */
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg); /* Arredonda os cantos inferiores */
   padding-top: 1.25rem; /* Convertido para rem */
 }
+
 /* Botão primário (Salvar) */
 .modal-actions .btn-primary {
   background-color: var(--accent-color-dark);
@@ -486,27 +523,39 @@ select {
   font-weight: 600;
   cursor: pointer;
 }
+/* Estilo para o botão de fechar (X) no canto do modal */
+.modal-close-btn {
+  position: absolute;
+  top: 1rem; /* 16px */
+  right: 1rem; /* 16px */
+  background: none;
+  border: none;
+  font-size: 1.5rem; /* 24px */
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s ease;
+  z-index: 10; /* Garante que o botão fique acima do título */
+}
+
+.modal-close-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Estilo para parágrafos de instrução dentro de modais */
+.modal-intro {
+  color: var(--text-secondary);
+  font-size: 0.95rem; /* Sutilmente menor que o texto padrão */
+  margin: 0 0 var(--space-lg) 0; /* Espaçamento padrão abaixo */
+  line-height: 1.5; /* Melhora a legibilidade */
+}
 /* =============================================================== */
 /* SOBRESCRITAS ESPECÍFICAS PARA COMPONENTES DENTRO DO MODAL       */
 /* =============================================================== */
 /* Aqui, anulamos os estilos de componentes reutilizados
    que não queremos dentro do contexto do modal. */
 
-/* Remove a linha divisória e o padding inferior do card quando ele está no modal */
-.modal-content .exercise-edit-card {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-/* Remove o padding extra da 'card-section' que causava o espaçamento duplo */
-.modal-content .card-section {
-  padding: 0;
-}
-
-/* Opcional: Anula margens específicas de títulos dentro do modal, se necessário */
-.modal-content .exercise-edit-card h4 {
-  margin-bottom: 1.25rem; /* Ajuste conforme necessário */
-}
 .plan-selection-list {
   display: flex;
   flex-direction: column;
@@ -554,21 +603,34 @@ select {
 /* CABEÇALHO PADRÃO DE PÁGINA INTERNA                              */
 /* =============================================================== */
 .page-header {
-  position: relative;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr; /* 3 colunas: esquerda, centro, direita */
   align-items: center;
   padding: 15px 0;
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 25px;
+  position: relative; /* Mantemos para o caso de fallback ou outros elementos */
 }
-.back-button {
-  /* Posicionamento flutuante */
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+/* Regras de alinhamento para as colunas do grid */
+.header-left { 
+  justify-self: start; 
+}
+.header-text-container { 
+  justify-self: center; 
+  text-align: center; 
+}
+.header-right { 
+  justify-self: end;
+ }
 
+ /* Garantimos que os botões dentro das colunas laterais tenham um tamanho fixo para o alinhamento funcionar */
+.header-left .back-button,
+.header-right .options-icon { /* Exemplo para um futuro ícone de opções */
+    width: 2.5rem; /* 40px */
+    height: 2.5rem; /* 40px */
+}
+
+.back-button {
   /* Aparência */
   background-color: var(--surface-color);
   border: 1px solid var(--border-color);
@@ -599,84 +661,12 @@ select {
   width: 1.5rem; /* 24px */
   height: 1.5rem; /* 24px */
 }
-.header-text-container {
-  text-align: center;
-}
-.page-header h1 {
-  font-family: var(--font-montserrat);
-  font-size: 1.5rem;
-  margin: 0;
-}
-.page-header h2 {
-  font-size: 1rem;
-  color: var(--text-secondary);
-  margin-top: 4px;
-  font-weight: 500;
-}
 
 /* =============================================================== */
 /* ESTILOS PARA TELA DE TREINO AO VIVO                             */
 /* =============================================================== */
-.workout-view .workout-header {
-  padding: 0 0 30px 0;
-  margin-bottom: 25px;
-  border-bottom: 1px solid var(--border-color);
-}
-.workout-view .header-row-1 {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 20px;
-}
-.workout-view .icon-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-}
-.workout-view .icon-btn:hover {
-  background-color: var(--bg-color);
-  color: var(--text-primary);
-}
-.workout-view .icon-btn svg {
-  width: 24px;
-  height: 24px;
-  fill: currentColor;
-}
-.workout-view .icon-btn.back-button {
-  position: absolute;
-  left: -10px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.workout-view .icon-btn.options-button {
-  position: absolute;
-  right: -10px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.workout-view .title-group {
-  text-align: center;
-}
-.workout-view .title-group h2 {
-  font-family: var(--font-montserrat);
-  margin: 0;
-  font-size: 1.5rem;
-  color: var(--text-primary);
-}
-.workout-view .title-group h3 {
-  margin: 0;
-  font-size: 1rem;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
+
+
 .workout-view .header-row-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -700,6 +690,12 @@ select {
   gap: var(--space-sm);
   padding: 0 5px;
 }
+
+/* Adicione este estilo para criar o espaçamento após a barra de progresso */
+.workout-session-details {
+  margin-bottom: var(--space-xl); /* 20px de margem inferior */
+}
+
 .workout-view .progress-label {
   font-size: 0.8em;
   font-weight: 600;
@@ -1231,13 +1227,6 @@ select {
   height: 1rem; /* 16px */
 }
 
-.plano-edit-page .exercise-list-title {
-  font-family: var(--font-montserrat);
-  font-size: 1.25rem;
-  margin: 30px 0 5px 0;
-  color: var(--text-primary);
-}
-
 .plano-edit-page .exercise-edit-list {
   display: flex;
   flex-direction: column;
@@ -1449,46 +1438,62 @@ select {
   color: var(--border-color-darker);
   font-size: 0.8rem;
 }
-/* Para tablets e telas menores */
+/* =============================================================== */
+/* REGRAS DE RESPONSIVIDADE UNIFICADAS                             */
+/* =============================================================== */
+
+/* --- Para Tablets e Telas Maiores (acima de 768px) --- */
+/* (Atualmente sem regras, pois a base já é mobile. 
+   Adicionaríamos aqui estilos específicos para desktop no futuro) */
+
+
+/* --- Para Tablets e Telas Menores (abaixo de 768px) --- */
 @media (max-width: 768px) {
   .container {
-    padding: 1rem; /* Reduz o padding lateral em telas menores */
+    padding: 1rem; /* Reduz o padding lateral */
   }
 
-  .dashboard-grid,
-  .planos-list {
-    grid-template-columns: 1fr; /* Força uma única coluna */
-    gap: var(--space-lg);
+  /* Força a grade de cards a ter sempre uma única coluna */
+  .aluno-list, .pef-list {
+    grid-template-columns: 1fr;
   }
 
-  .header h1 {
-    font-size: 1.5rem; /* Reduz o tamanho do título principal */
-  }
+  /* Transforma os filtros em um carrossel rolável */
+  .filters {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.75rem;
+  /* Regras para esconder a barra de rolagem */
+  -ms-overflow-style: none;  /* Internet Explorer e Edge (legado) */
+  scrollbar-width: none;     /* Firefox */
 }
 
-/* Para celulares */
+/* Regra para esconder a barra de rolagem em navegadores WebKit */
+.filters::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera, Edge (novos) e navegadores mobile */
+}
+}
+
+
+/* --- Apenas para Celulares (abaixo de 480px) --- */
 @media (max-width: 480px) {
   body {
-    font-size: 14px; /* Ajusta o tamanho da fonte base */
+    font-size: 14px; /* Ajusta a fonte base da aplicação */
   }
 
-  .header {
-    flex-direction: column;
-    align-items: flex-start;
+  /* Quebra o cabeçalho principal em duas linhas */
+  #dashboard-view > header { /* Seletor específico para o header do dashboard */
+
     gap: var(--space-sm);
-  }
-
-  .header .filters {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-  }
-
-  .header .filters .btn {
-    width: 100%;
-    text-align: center;
+    justify-content: space-between; /* Garantimos que os itens fiquem sempre o mais longe possível um do outro */
+    /*padding-left: var(--space-md)*/; /* Reduzimos o espaçamento lateral em telas muito pequenas */
+    /*padding-right: var(--space-md)*/; /* Reduzimos o espaçamento lateral em telas muito pequenas */
+    gap: var(--space-md); /* Reduz o espaçamento entre os itens */
   }
 }
+
 /* Adicione esta regra para resetar o estilo do botão do chevron */
 .chevron {
   background: none;
@@ -1688,4 +1693,118 @@ background-color: #f0f0f0;
 .autocomplete-wrapper {
   position: relative;
   width: 100%; /* Garante que o wrapper ocupe o espaço definido pelo pai */
+}
+/* ARQUIVO: globals.css - Adicione junto com outros estilos de formulário */
+
+.input-group-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg); /* Mantém o espaçamento vertical padrão */
+}
+
+.input-group-checkbox input[type="checkbox"] {
+  width: 1.15rem; /* ~18px */
+  height: 1.15rem; /* ~18px */
+  cursor: pointer;
+  margin: 0; /* Reseta margens padrão */
+}
+
+.input-group-checkbox label {
+  /* Resetamos a formatação padrão de 'label' para esta variação */
+  margin: 0;
+  font-weight: 500; 
+  color: var(--text-primary);
+  cursor: pointer;
+}
+/* Reutiliza 95% do AlunoCard para consistência */
+.pef-card {
+  background-color: var(--surface-color);
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: none;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease-in-out;
+}
+
+.pef-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+.pef-details {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  margin-top: var(--space-md);
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* Novas tags de status para Inativo, Admin e PEF */
+.status-tag-inativo {
+  background-color: var(--text-secondary);
+  color: white;
+}
+
+.status-tag-admin {
+  background-color:var(--status-em-treinamento); /* Laranja */
+  color: white;
+}
+
+.status-tag-pef {
+  background-color:var(--plan-color-0); /* Chrysler Blue */
+
+  color: white;
+}
+/* ESTAGIÁRIO */
+.status-tag-estagiario {
+  background-color: var(--plan-color-1); /* Neon Blue */
+  color: white;
+}
+/* Alinha os botões de ação do PefCard */
+.pef-card .actions {
+  margin-top: var(--space-xl);
+  gap: var(--space-sm);
+  display: flex;
+  justify-content: flex-end; /* Alinha botões à direita */
+}
+
+#pef-list-container {
+  margin-top: var(--space-xl);
+}
+
+.pef-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-xl);
+}
+
+/* 1. CRIE UMA CLASSE BASE GENÉRICA PARA CARDS */
+.info-card {
+  background-color: var(--surface-color);
+  padding: var(--space-xl);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: none;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease-in-out;
+}
+
+.info-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+/* 2. GARANTA QUE OS TÍTULOS DE TODOS OS CARDS SEJAM IGUAIS */
+
+.info-card .actions {
+  margin-top: var(--space-xl);
+  gap: var(--space-sm);
+  display: flex;
+  justify-content: flex-end; /* <<< ESTA É A LINHA CHAVE */
 }
