@@ -164,6 +164,28 @@ select {
 }
 
 /* =============================================================== */
+/* ESTILOS DO CARD                                                 */
+/* =============================================================== */
+.info-card .card-body {
+  /* Adiciona um espaço flexível entre o header e as ações,
+     empurrando o conteúdo para cima. */
+  flex-grow: 1;
+}
+
+/* Garante que a linha de status em QUALQUER card tenha a mesma margem */
+.info-card .status-line {
+  margin-bottom: var(--space-md); /* 12px */
+}
+
+/* Unifica o estilo do texto secundário (Com: Fulano, CREF:, etc.) */
+.info-card .pef-resp,
+.info-card .pef-details {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  margin-top: var(--space-md); /* 12px */
+}
+
+/* =============================================================== */
 /* ESTILOS DO DASHBOARD PRINCIPAL                                  */
 /* =============================================================== */
 #dashboard-view header {
@@ -284,7 +306,7 @@ select {
 .card-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 10px;
 }
 
@@ -389,8 +411,7 @@ select {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-sm);
-  margin-bottom: 10px;
-}
+  }
 .status-timer {
   font-size: 0.8em;
   color: var(--text-secondary);
@@ -1806,5 +1827,12 @@ background-color: #f0f0f0;
   margin-top: var(--space-xl);
   gap: var(--space-sm);
   display: flex;
-  justify-content: flex-end; /* <<< ESTA É A LINHA CHAVE */
+  /* Por padrão, os itens se alinharão à direita */
+  justify-content: flex-end;
 }
+
+  /* Regra PADRÃO para grupos de ícones (alinhados à direita) */
+.PefCard .actions { /* Usando a especificidade do componente pai */
+  justify-content: flex-end;
+}
+

@@ -1030,38 +1030,24 @@ function AlunoCard({
         </div>{" "}
       </div>{" "}
       <div className="card-body">
-        {" "}
         <div className="status-line">
-          {" "}
-          <span
-            className={`status-tag status-tag-${aluno.status.replace(
-              "_",
-              "-"
-            )}`}
-          >
-            {" "}
-            {statusMap[aluno.status]}{" "}
-          </span>{" "}
-          <span className="status-timer">⏰ {timeInStatus}</span>{" "}
+          <span className={`status-tag status-tag-${aluno.status.replace("_", "-")}`}>
+            {statusMap[aluno.status]}
+          </span>
+          <span className="status-timer">⏰ {timeInStatus}</span>
           {aluno.status === "em_treinamento" && aluno.ritmo && (
             <div className={`ritmo-treino ritmo-${aluno.ritmo}`}>
-              {" "}
-              <span className="ritmo-dot"></span>{" "}
-              {aluno.ritmo === "no_ritmo" ? "No ritmo" : "Atrasado"}{" "}
+              <span className="ritmo-dot"></span>
+              {aluno.ritmo === "no_ritmo" ? "No ritmo" : "Atrasado"}
             </div>
-          )}{" "}
-        </div>{" "}
+          )}
+        </div>
+
         {aluno.status === "em_treinamento" && (
           <div className="pef-resp">
-            {" "}
-            Com:{" "}
-            <strong>
-              {" "}
-              {getPefFullNameById(aluno.pef_responsavel_id!)}{" "}
-            </strong>{" "}
+            Com: <strong>{getPefFullNameById(aluno.pef_responsavel_id!)}</strong>
           </div>
-        )}{" "}
-      </div>{" "}
+        )}      </div>
       <div className="actions">{renderActions()}</div>{" "}
     </div>
   );
@@ -1090,7 +1076,7 @@ function PefCard({
   return (
     <div className="info-card">
       <div className="card-header">
-        <h3>{pef.nome}</h3>
+        <h3 className="title-card">{pef.nome}</h3>
 
         {/* Adicionamos este wrapper para espelhar a estrutura do AlunoCard.
           Ele serve como o segundo item que o flexbox precisa para alinhar
