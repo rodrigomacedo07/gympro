@@ -103,9 +103,11 @@ interface ExercicioCardProps {
   onDelete: () => void;
   isEditable?: boolean;
   onExercicioChange?: (campo: keyof ExercicioPlano, valor: string | number) => void;
-  onSuggestionSelect?: (suggestion: ExercicioBiblioteca) => void; // <<< NOVA PROP
+  onSuggestionSelect?: (suggestion: ExercicioBiblioteca) => void;
   validationErrors?: Record<string, string>;
-
+  suggestions: ExercicioBiblioteca[];
+  isSearchActive: boolean;
+  onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 interface EditExerciseModalProps {
   exercicio: ExercicioComEdicao | null;
@@ -887,6 +889,8 @@ function AlunoCard({
   aluno,
   treinadores,
   pefLogado,
+  isMenuOpen,
+  onToggleMenu,
   onUpdateStatus,
   onNavigateToWorkout,
   onGerenciarPlanos,
@@ -895,8 +899,10 @@ function AlunoCard({
   aluno: Aluno;
   treinadores: PEF[];
   pefLogado: PEF;
+  isMenuOpen: boolean;
+  onToggleMenu: () => void;
   onUpdateStatus: (
-    event: React.MouseEvent<HTMLButtonElement>,
+    event: React.MouseEvent<HTMLButtonElement> | null,
     alunoId: number,
     newStatus: Aluno["status"],
     pefId?: number | null
@@ -905,9 +911,7 @@ function AlunoCard({
   onGerenciarPlanos: (alunoId: number) => void;
   onVerHistorico: (alunoId: number) => void;
 }) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const statusMap = {
+    const statusMap = {
     disponivel: "Disponível",
     aguardando: "Aguardando",
     em_treinamento: "Em Treinamento",
@@ -919,15 +923,7 @@ function AlunoCard({
       ? `${pef.nome.split(" ")[0]} ${pef.nome.split(" ").slice(-1)[0]}`
       : "N/A";
   };
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [menuRef]);
+
   const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("button, a")) {
       return;
@@ -989,13 +985,13 @@ function AlunoCard({
       <div className="card-header">
         {" "}
         <h3 className="title-card">{aluno.nome}</h3>{" "}
-        <div className="card-options-wrapper" ref={menuRef}>
+        <div className="card-options-wrapper">
           {" "}
           <button
             className="options-icon"
             onClick={(e) => {
               e.stopPropagation();
-              setIsMenuOpen(!isMenuOpen);
+              onToggleMenu();
             }}
           >
             {" "}
@@ -1009,22 +1005,20 @@ function AlunoCard({
                 onClick={(e) => {
                   e.stopPropagation();
                   onGerenciarPlanos(aluno.id);
-                  setIsMenuOpen(false);
-                }}
+                  }}
               >
                 {" "}
                 Gerenciar Sessões de Treino{" "}
               </button>{" "}
               <button
-      className="menu-item"
-      onClick={(e) => {
-        e.stopPropagation();
-        onVerHistorico(aluno.id);
-        setIsMenuOpen(false);
-      }}
-    >
-      Ver Histórico de Treinos
-    </button>
+                className="menu-item"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onVerHistorico(aluno.id);
+                }}
+              >
+                Ver Histórico de Treinos
+              </button>
             </div>
           )}{" "}
         </div>{" "}
@@ -1809,7 +1803,10 @@ function GerenciarPlanosPage({
                             }}
                             onDelete={() =>
                               onExcluirExercicio(plano.id, exercicioParaCard.id)
-                            } // <-- ATUALIZE AQUI
+                            }
+                            suggestions={[]}
+                            isSearchActive={false}
+                            onSearchChange={() => {}} // <-- ATUALIZE AQUI
                           />
                         );
                       })}
@@ -1853,57 +1850,27 @@ function ExercicioCard({
   exercicio,
   isExpanded,
   showActions,
+  isEditable = false,
+  validationErrors,
+  suggestions, // <<< NOVA PROP
+  isSearchActive, // <<< NOVA PROP
   onToggleExpansion,
   onEdit,
   onDelete,
-  isEditable = false,
   onExercicioChange = () => {},
   onSuggestionSelect,
-  validationErrors
-}: ExercicioCardProps) {
+  onSearchChange, // <<< NOVA PROP
+}: ExercicioCardProps) { 
   const errorKey = `exercicios[${index}].nome`;
-  const [suggestions, setSuggestions] = useState<ExercicioBiblioteca[]>([]);
-  const [isSearchActive, setIsSearchActive] = useState(false); // <-- NOVO ESTADO AQUI
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
 console.log(errorKey, validationErrors)
-
-  // Fecha a lista de sugestões ao clicar fora
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setSuggestions([]);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [wrapperRef]);
-
-
-const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const value = e.target.value;
-  onExercicioChange('nome', value);
-  setIsSearchActive(value.trim() !== '');
-  
-  if (value.length > 1) {
-    const normalizedSearch = normalizeString(value);
-    const filtered = initialMockData.exercicios_biblioteca.filter(ex =>
-      normalizeString(ex.nome).includes(normalizedSearch)
-    );
-    setSuggestions(filtered);
-  } else {
-    setSuggestions([]);
-  }
-};
 
   const handleSuggestionClick = (suggestion: ExercicioBiblioteca) => {
 
 if (onSuggestionSelect) {
     onSuggestionSelect(suggestion); 
   }
-    setSuggestions([]);
-    setIsSearchActive(false);
-  };
+};
   const SuggestionRow = ({ index, style }: { index: number; style: React.CSSProperties }) => (
     <div
       style={style}
@@ -1925,13 +1892,12 @@ if (onSuggestionSelect) {
         </button>
 
 <div className="card-section">
-  <div className="input-group" data-error="exercicioNome" ref={wrapperRef}>
-          <label>Nome do Exercício</label>
+  <div className="input-group" data-error="exercicioNome">
+    <label>Nome do Exercício</label>
     <div className="autocomplete-wrapper">
-
-    <input
+      <input
       value={exercicio.nome}
-      onChange={handleSearchChange}
+      onChange={onSearchChange} // <<< USA A NOVA PROP
       placeholder="Busque um exercício (ex: Supino)"
       className={validationErrors?.[errorKey] ? "invalid" : ""}
       autoComplete="off"
@@ -1952,9 +1918,10 @@ if (onSuggestionSelect) {
         {SuggestionRow}
       </List>
     ) : (
-      <div className="no-results-placeholder">
-        Nenhum exercício encontrado
-      </div>
+    // Adicionamos a verificação de "trim" para não mostrar a mensagem com o campo vazio
+      exercicio.nome.trim().length > 1 && (
+      <div className="no-results-placeholder">Nenhum exercício encontrado</div>
+      )
     )}
   </div>
 )}
@@ -2212,6 +2179,21 @@ function PlanoEditView({
   const [expandedItems, setExpandedItems] = useState<{
     [key: string]: boolean;
   }>({});
+
+  const [activeSuggestionBoxIndex, setActiveSuggestionBoxIndex] = useState<number | null>(null);
+  const [suggestions, setSuggestions] = useState<ExercicioBiblioteca[]>([]);
+  const exerciseInputRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exerciseInputRef.current && !exerciseInputRef.current.contains(event.target as Node)) {
+        setActiveSuggestionBoxIndex(null); // Fecha a caixa de sugestões
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [exerciseInputRef]);
+
   const toggleExpansion = (id: string) => {
     setExpandedItems((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -2256,25 +2238,44 @@ function PlanoEditView({
         {/* 4. LOOP .MAP() CORRIGIDO E COMPLETO */}
         <div className="exercise-edit-list">
           {plano.exercicios.map((ex, index) => (
+            <div key={ex.id} ref={activeSuggestionBoxIndex === index ? exerciseInputRef : null}>
             <ExercicioCard
-              key={ex.id}
               index={index}
               exercicio={ex}
               isEditable={true}
               validationErrors={validationErrors}
+              suggestions={activeSuggestionBoxIndex === index ? suggestions : []}
+              isSearchActive={activeSuggestionBoxIndex === index}
+              onSearchChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const value = e.target.value;
+                  // 1. Atualiza o valor do input no estado principal
+                  onExercicioChange(index, 'nome', value);
+                  // 2. Define este card como o ativo para o autocomplete
+                  setActiveSuggestionBoxIndex(index);
+                  // 3. Busca as sugestões
+                  if (value.length > 1) {
+                    const normalizedSearch = normalizeString(value);
+                    const filtered = initialMockData.exercicios_biblioteca.filter(libEx =>
+                      normalizeString(libEx.nome).includes(normalizedSearch)
+                    );
+                    setSuggestions(filtered);
+                  } else {
+                    setSuggestions([]);
+                  }
+                }}
+              onSuggestionSelect={(suggestion) => {
+                  onExercicioSelect(index, suggestion);
+                  // Fecha a caixa de sugestões após a seleção
+                  setActiveSuggestionBoxIndex(null);
+                }}
               onExercicioChange={(campo, valor) => onExercicioChange(index, campo, valor)}
-              onSuggestionSelect={(suggestion) => onExercicioSelect(index, suggestion)} // <<< CONECTANDO A NOVA PROP
-              // Props de exclusão e visualização agora estão conectadas
               onDelete={() => onDeleteExercicio(ex.id)}
               isExpanded={!!expandedItems[`ex-${ex.id}`]}
               onToggleExpansion={() => toggleExpansion(`ex-${ex.id}`)}
               showActions={!ex.isEditing} // Mostra ações (editar/deletar do modo visualização) apenas se NÃO estiver em modo de edição
-              onEdit={() =>
-                alert(
-                  "Funcionalidade de editar um exercício existente a ser implementada"
-                )
-              }
+              onEdit={() => alert("Funcionalidade de editar um exercício existente a ser implementada")}
             />
+            </div>
           ))}
         </div>
         <div className="actions-container">
@@ -2519,6 +2520,8 @@ const [treinadores, setTreinadores] = useState<PEF[]>(
 const [pefEmEdicao, setPefEmEdicao] = useState<PEF | null>(null);
 const [pefFilter, setPefFilter] = useState('ativo');
 const [pefSearch, setPefSearch] = useState('')
+const [openAlunoMenuId, setOpenAlunoMenuId] = useState<number | null>(null);
+
 
 const pefLogado = treinadores.find(p => p.id === 1); // Simula o PEF de ID 1 (nosso admin) como logado
 
@@ -3519,6 +3522,8 @@ const onEditarPlano = (planoId: number) => {
                         aluno={aluno}
                         treinadores={treinadores}
                         pefLogado={pefLogado}
+                        isMenuOpen={openAlunoMenuId === aluno.id} // <<< CONECTADO
+                        onToggleMenu={() => setOpenAlunoMenuId(prevId => prevId === aluno.id ? null : aluno.id)} // <<< CONECTADO
                         onNavigateToWorkout={handleNavigateToWorkout}
                         onUpdateStatus={handleUpdateStatus}
                         onGerenciarPlanos={handleGerenciarPlanos}
