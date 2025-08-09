@@ -150,6 +150,7 @@ type NovoPefData = {
   cref: string;
   is_estagiario: boolean;
 };
+// Forçando um novo deploy na Vercel
 
 // =======================================================
 // 3. CONSTANTES E FUNÇÕES AUXILIARES
