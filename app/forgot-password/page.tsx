@@ -17,6 +17,7 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter(); 
 
+  
   // ADICIONADO: Novo useEffect com a lógica correta de redirecionamento.
   // Esta é a única verificação de sessão necessária nesta página.
   useEffect(() => {
