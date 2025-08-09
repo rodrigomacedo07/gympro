@@ -16,7 +16,14 @@ import React, {
 } from "react";
 import Papa from 'papaparse';
 import { FixedSizeList as List } from 'react-window';
+import { useRouter } from 'next/navigation';
+import { useAuth } from './contexts/AuthContext';
+import supabase from './lib/supabaseClient';
+
 /*import debounce from 'lodash.debounce';*/
+
+
+
 
 // =======================================================
 // 2. DEFINIÇÕES DE TIPOS (INTERFACES)
@@ -40,6 +47,7 @@ interface Plano {
 interface Aluno {
   id: number;
   nome: string;
+  cpf: string;
   status: "disponivel" | "aguardando" | "em_treinamento";
   pef_responsavel_id?: number | null;
   ritmo?: "no_ritmo" | "atrasado";
@@ -62,6 +70,7 @@ interface ExercicioBiblioteca {
 }
 interface CsvRow {
   Nome?: string; // Coluna obrigatória
+  CPF?: string; // Coluna obrigatória
   // Adicione outras colunas se necessário
 }
 interface LiveExercise {
@@ -134,6 +143,14 @@ type ExercicioError = {
   series?: string;
   repeticoes?: string;
 };
+type NovoPefData = {
+  nome: string;
+  email: string;
+  cpf: string;
+  cref: string;
+  is_estagiario: boolean;
+};
+
 // =======================================================
 // 3. CONSTANTES E FUNÇÕES AUXILIARES
 // =======================================================
@@ -250,6 +267,13 @@ const addIcon = (
     <path d="M5 12h14" />
   </svg>
 );
+const resetIcon = (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 11.88V12a8 8 0 1 1-2.9-6.32" />
+      <path d="M22 4L12 14.01l-3-3" />
+    </svg>
+  );
+
 
 /* --- FUNÇÕES UTILITÁRIAS PURAS --- */
 const timeAgoFn = (minutes: number) =>new Date(new Date().getTime() - minutes * 60000).toISOString();
@@ -901,6 +925,9 @@ const validatePlano = (plano: Plano): { isValid: boolean; errors: Record<string,
 // =======================================================
 export default function Page() {
   /* --- ESTADOS PRINCIPAIS DE DADOS --- */
+const router = useRouter();
+const { user, loading, signOut } = useAuth();
+const [profile, setProfile] = useState<PEF | null>(null);
 const [alunos, setAlunos] = useState<Aluno[]>(JSON.parse(JSON.stringify(initialMockData.alunos)));
 const [treinadores, setTreinadores] = useState<PEF[]>(
 initialMockData.treinadores.map(pef => {
@@ -944,13 +971,11 @@ const [activeTrainingTime, setActiveTrainingTime] = useState<string>('');
 const [timeAgoToDisplay, setTimeAgoToDisplay] = useState<Record<number, string>>({});
 const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 const headerMenuRef = useRef<HTMLDivElement>(null);
- 
+const [isAddPefModalOpen, setAddPefModalOpen] = useState(false); 
     
   /* --- ESTADOS DERIVADOS E Refs --- */
 const activeAluno = view.alunoId ? alunos.find((a) => a.id === view.alunoId) : null;
 const activeSession = activeAluno ? activeSessions.find((s) => s.alunoId === activeAluno.id) : null;
-const pefLogado = treinadores.find(p => p.id === 1)as PEF;
-
 
   /* --- EFEITOS COLATERAIS (useEffect) --- */
 useEffect(() => {
@@ -1065,6 +1090,31 @@ useEffect(() => {
   return () => clearInterval(rhythmInterval);
 
 }, [alunos, activeSessions]); // <<< Array de dependências CORRETO
+useEffect(() => {
+    console.log("Estado 'alunos' foi atualizado:", alunos);
+}, [alunos]);
+useEffect(() => {
+  // Se o usuário da autenticação estiver disponível, buscamos seu perfil
+  if (user) {
+    const fetchProfile = async () => {
+      // Faz uma chamada à tabela 'profiles' buscando a linha
+      // onde a coluna 'id' é igual ao user.id do usuário logado
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single(); // .single() pega apenas um resultado
+
+      if (error) {
+        console.error("Erro ao buscar perfil:", error);
+      } else if (data) {
+        setProfile(data); // Armazena os dados do perfil no nosso novo estado
+      }
+    };
+
+    fetchProfile();
+  }
+}, [user]); // Este efeito roda sempre que o 'user' mudar
 
 /* --- HANDLERS E CALLBACKS (useCallback) --- */
 const onExcluirPlano = useCallback((alunoId: number, planoId: number) => {
@@ -1171,7 +1221,7 @@ const handleNavigateToWorkout = useCallback(
 );
 const handlePlanSelected = useCallback(
   (alunoId: number, planoId: number) => {
-    if (!pefLogado) {
+    if (!profile) {
     console.error("Ação não permitida: usuário não está logado.");
     return;
   }
@@ -1195,12 +1245,12 @@ const handlePlanSelected = useCallback(
       ...prev.filter((s) => s.alunoId !== alunoId),
       newSession,
     ]);
-    handleUpdateStatus(null, alunoId, "em_treinamento", pefLogado.id);
+    handleUpdateStatus(null, alunoId, "em_treinamento", profile.id);
     console.log('Tudo pronto! Navegando para a tela de workout para o aluno:', alunoId);
 
     setView({ type: "workout", alunoId: alunoId });
   },
-  [alunos, pefLogado, handleUpdateStatus, setActiveSessions, setView]
+  [alunos, profile, handleUpdateStatus, setActiveSessions, setView]
 );
 const handleUpdateExerciseStatus = useCallback((
   alunoId: number,
@@ -1702,14 +1752,75 @@ const handleResetPassword = useCallback((pefNome: string) => {
     // Como estamos apenas com dados mockados, o alert simula a conclusão do fluxo.
   }
 },[]);
+const handlePefSubmit = useCallback(async (novoPef: NovoPefData) => {
 
+    // Passo 1: Convidar o usuário no sistema de autenticação do Supabase
+    const { data, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+      novoPef.email
+    );
+
+    if (inviteError) {
+      console.error("Erro ao convidar usuário:", inviteError);
+      alert(`Erro ao convidar usuário: ${inviteError.message}`);
+      return;
+    }
+
+    if (data.user) {
+      // Passo 2: Se o convite funcionou, inserir o perfil na nossa tabela 'profiles'
+      const { error: insertError } = await supabase.from('profiles').insert({
+        id: data.user.id, // <<< O PONTO CRÍTICO: Usamos o ID do usuário recém-criado
+        nome: novoPef.nome,
+        cpf: novoPef.cpf,
+        cref: novoPef.is_estagiario ? null : novoPef.cref,
+        is_estagiario: novoPef.is_estagiario,
+        roles: ['pef'], // Todo novo usuário começa com a role 'pef'
+        status: 'ativo'
+      });
+
+      if (insertError) {
+        console.error("Erro ao inserir perfil:", insertError);
+        alert(`Erro ao salvar perfil: ${insertError.message}`);
+        // Aqui teríamos que lidar com o caso de um usuário de auth ter sido criado
+        // mas o perfil não (ex: deletar o usuário de auth recém-criado).
+        // Para o MVP, um alerta é suficiente.
+        return;
+      }
+
+      // Passo 3: Atualizar a lista de PEFs na tela (Opcional, mas boa UX)
+      // Para isso, teríamos que buscar o perfil recém-criado.
+      // Por ora, um simples alerta de sucesso e fechar o modal é o suficiente.
+      alert(`Convite enviado com sucesso para ${novoPef.email}!`);
+      setAddPefModalOpen(false);
+    }
+  }, []); // Dependências vazias por enquanto
+
+  // 3. Adicione a lógica de proteção de rota
+  useEffect(() => {
+    // Espera a verificação da sessão terminar (loading === false)
+    // E então verifica se NÃO HÁ um usuário logado.
+    if (!loading && !user) {
+      router.push('/login'); // Redireciona para a página de login
+    }
+  }, [user, loading, router]); // O efeito roda sempre que esses valores mudarem
+
+  // 4. Adicione uma tela de carregamento enquanto a sessão é verificada
+  if (loading) {
+    return <div>Carregando...</div>; // Ou um componente de Spinner mais elegante
+  }
+
+  // 5. Garanta que a página só seja renderizada para usuários logados
+  if (!user) {
+    // Pode parecer redundante, mas garante que nada seja renderizado
+    // antes do redirecionamento do useEffect acontecer.
+    return null;
+  }  
 
    /* ---LÓGICA DE RENDERIZAÇÃO (Estados Derivados)--- */
 const filteredAlunos = alunos.filter((aluno) => {
     const statusMatch =
       statusFilter === "todos" ||
       (statusFilter === "meus_alunos" &&
-        aluno.pef_responsavel_id === pefLogado?.id) ||
+        aluno.pef_responsavel_id === profile?.id) ||
       aluno.status === statusFilter;
     const nameMatch =
       nameFilter === "" ||
@@ -1796,6 +1907,9 @@ const filteredAlunos = alunos.filter((aluno) => {
       break;
     case "dashboard":
     default:
+      if (!profile) {
+        return <div>Carregando perfil do usuário...</div>; // Ou um spinner
+    }
       pageContent = (
         <div className="container">
           <div id="dashboard-view">
@@ -1806,9 +1920,9 @@ const filteredAlunos = alunos.filter((aluno) => {
   <div style={{ position: 'relative' }} ref={headerMenuRef}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
       <div id="pef-info">
-        <span>{pefLogado.nome}</span> <br />
+        <span>{profile.nome}</span> <br />
         <small>
-          {pefLogado.is_estagiario ? "Estagiário" : `CREF: ${pefLogado.cref}`}
+          {profile.is_estagiario ? "Estagiário" : `CREF: ${profile.cref}`}
         </small>
       </div>
       
@@ -1821,7 +1935,7 @@ const filteredAlunos = alunos.filter((aluno) => {
     {/* O menu dropdown, que só aparece se 'isHeaderMenuOpen' for true */}
     {isHeaderMenuOpen && (
       <div className="options-menu">
-        <button
+      <button
           className="menu-item"
           onClick={() => {
             setUploadModalOpen(true); // Abre o modal
@@ -1830,8 +1944,8 @@ const filteredAlunos = alunos.filter((aluno) => {
         >
           {/* Opcional: Adicionar um ícone de upload aqui */}
           Incluir Aluno via CSV
-        </button>
-            {pefLogado.roles.includes('admin') && (
+      </button>
+            {profile.roles.includes('admin') && (
       <button
         className="menu-item"
         onClick={() => {
@@ -1842,6 +1956,12 @@ const filteredAlunos = alunos.filter((aluno) => {
         Gerenciar Perfis
       </button>
     )}
+      <button
+        className="menu-item"
+        onClick={signOut} // Chama a função do nosso contexto
+        >
+        Sair
+      </button>
       </div>
     )}
   </div>
@@ -1917,7 +2037,7 @@ const filteredAlunos = alunos.filter((aluno) => {
                         aluno={aluno}
                         timeInStatus={timeAgoToDisplay[aluno.id] || ''}
                         treinadores={treinadores}
-                        pefLogado={pefLogado}
+                        profile={profile}
                         isMenuOpen={openAlunoMenuId === aluno.id} // <<< CONECTADO
                         onToggleMenu={() => setOpenAlunoMenuId(prevId => prevId === aluno.id ? null : aluno.id)} // <<< CONECTADO
                         onNavigateToWorkout={handleNavigateToWorkout}
@@ -1972,7 +2092,6 @@ case "gerenciar_perfis":
         Inativos
       </button>
     </div>
-
     <div className="search-wrapper">
       <input
         type="text"
@@ -1990,6 +2109,12 @@ case "gerenciar_perfis":
         </button>
       )}
     </div>
+     <button 
+       onClick={() => setAddPefModalOpen(true)} // <<< CONECTE A AÇÃO AQUI
+       className="btn-primary-new"
+      >
+       + Adicionar Profissional
+     </button>
   </div>
 
   <div id="pef-list-container">
@@ -2033,7 +2158,7 @@ case "gerenciar_perfis":
   }
 
 
-  if (!pefLogado) {
+  if (!profile) {
   return (
     <div>
       Usuário não autenticado. Por favor, entre em contato com o administrador do sistema.
@@ -2070,6 +2195,12 @@ case "gerenciar_perfis":
           onSave={handleUpdatePef}
         />
       )}
+      {isAddPefModalOpen && (
+      <PefAddModal
+        onClose={() => setAddPefModalOpen(false)}
+        onSave={handlePefSubmit}
+        />
+      )}
     </>
   );
 }
@@ -2081,7 +2212,7 @@ function AlunoCard({
   aluno,
   timeInStatus,
   treinadores,
-  pefLogado,
+  profile,
   isMenuOpen,
   onToggleMenu,
   onUpdateStatus,
@@ -2092,7 +2223,7 @@ function AlunoCard({
   aluno: Aluno;
   timeInStatus: string;
   treinadores: PEF[];
-  pefLogado: PEF;
+  profile: PEF;
   isMenuOpen: boolean;
   onToggleMenu: () => void;
   onUpdateStatus: (
@@ -2148,12 +2279,12 @@ function AlunoCard({
           </button>
         );
       case "em_treinamento":
-        if (aluno.pef_responsavel_id !== pefLogado.id) {
+        if (aluno.pef_responsavel_id !== profile.id) {
           return (
             <button
               className="action-btn"
               onClick={(e) =>
-                onUpdateStatus(e, aluno.id, "em_treinamento", pefLogado.id)
+                onUpdateStatus(e, aluno.id, "em_treinamento", profile.id)
               }
             >
               {" "}
@@ -2234,7 +2365,9 @@ function AlunoCard({
           <div className="pef-resp">
             Com: <strong>{getPefFullNameById(aluno.pef_responsavel_id!)}</strong>
           </div>
-        )}      </div>
+        )}
+
+        </div>
       <div className="actions">{renderActions()}</div>{" "}
     </div>
   );
@@ -2251,14 +2384,6 @@ function PefCard({
   onResetPassword: () => void;
 }) {
   const isAtivo = pef.status === 'ativo';
-
-  // Ícone para reset de senha (exemplo, podemos criar um novo se preferir)
-  const resetIcon = (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 11.88V12a8 8 0 1 1-2.9-6.32" />
-      <path d="M22 4L12 14.01l-3-3" />
-    </svg>
-  );
 
   return (
     <div className="info-card">
@@ -3465,25 +3590,30 @@ const handleStartImport = () => {
   Papa.parse(selectedFile, {
     header: true,
     skipEmptyLines: true,
-    complete: (results: Papa.ParseResult<CsvRow>) => {  // <-- Tipagem explícita aqui
-      // Validação da coluna Nome
-      if (!results.meta.fields || !results.meta.fields.includes("Nome")) {
-        alert("Erro: O arquivo deve conter a coluna 'Nome'");
+    delimiter: ";",
+    transformHeader: header => header.trim(),
+    complete: (results: Papa.ParseResult<CsvRow>) => {
+      // Validação: Garante que as colunas Nome e CPF existem no arquivo
+      if (!results.meta.fields || !results.meta.fields.includes("Nome") || !results.meta.fields.includes("CPF")) {
+        alert("Erro: O arquivo deve conter as colunas 'Nome' e 'CPF' preenchidas");
         return;
       }
 
-const novosAlunos: Aluno[] = results.data
-  .filter((row): row is { Nome: string } => !!row.Nome?.trim())
-  .map((row, index) => ({
-    id: Date.now() + index,
-    nome: row.Nome.trim(), // Agora TS sabe que Nome existe e é string
-    status: "disponivel",
-    status_timestamp: new Date().toISOString(),
-    planos: [],
-    pef_responsavel_id: null,
-    ritmo: undefined,
-    historico: []
-  }));
+      const novosAlunos: Aluno[] = results.data
+        .filter((row): row is { Nome: string; CPF: string } => 
+          !!row.Nome?.trim() && !!row.CPF?.trim() // Ignora linhas sem nome ou sem CPF
+        )
+        .map((row, index) => ({
+          id: Date.now() + index,
+          nome: row.Nome.trim(),
+          cpf: row.CPF.trim(), // <<< PROCESSA O NOVO CAMPO CPF
+          status: "disponivel",
+          status_timestamp: new Date().toISOString(),
+          planos: [],
+          pef_responsavel_id: null,
+          ritmo: undefined,
+          historico: []
+        }));
 
       onImportSuccess(novosAlunos);
     },
@@ -3509,7 +3639,7 @@ return (
           <p className="modal-intro">
             Selecione um arquivo .csv com uma coluna chamada <code>Nome</code>.
             <br />
-            <a href="/template.csv" download="template_importacao_alunos.csv" style={{ color: 'var(--primary-action-color)', fontWeight: '600' }}>
+            <a href="/template_insert_aluno.csv" download="template_importacao_alunos.csv" style={{ color: 'var(--primary-action-color)', fontWeight: '600' }}>
               Baixe um modelo de arquivo aqui.
             </a>
           </p>
@@ -3522,6 +3652,9 @@ return (
 
         <div className="modal-actions">
           {/* O botão agora está dentro do rodapé padrão, alinhado à direita */}
+          <button className="btn btn-secondary" onClick={onClose}>
+            Cancelar
+          </button>
           <button className="btn btn-primary" disabled={!selectedFile} onClick={handleStartImport}>
             Iniciar Importação
           </button>
@@ -3610,3 +3743,103 @@ const StatusIcon = ({ status }: { status: HistoricoItem['status'] }) => {
   if (status === 'incompleto') return <div style={{ ...styles, backgroundColor: 'var(--status-em-treinamento)' }}>!</div>;
   return <div style={{ ...styles, backgroundColor: 'var(--text-secondary)' }}>-</div>;
 };
+function PefAddModal({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+onSave: (novoPef: NovoPefData) => void;
+}) {
+  // Estado interno para controlar os campos do formulário
+  const [dadosPef, setDadosPef] = useState({
+    nome: '',
+    cpf: '',
+    email: '',
+    cref: '',
+    is_estagiario: false,
+  });
+
+  const handleChange = (campo: keyof typeof dadosPef, valor: string | boolean) => {
+    setDadosPef(dadosAtuais => ({ ...dadosAtuais, [campo]: valor }));
+  };
+
+  const handleSaveClick = () => {
+    // Lógica de validação e salvamento virá aqui
+    onSave(dadosPef);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close-btn" onClick={onClose}>&times;</button>
+        <div className="modal-header">
+          <h2 className="title-modal">Adicionar Profissional</h2>
+          <p className="subtitle-modal">Insira os dados</p>
+        </div>
+      <div className="modal-body">
+        {/* --- CAMPO DE NOME --- */}
+        <div className="input-group">
+          <label htmlFor="pef-add-nome">Nome Completo</label>
+          <input
+            id="pef-add-nome"
+            type="text"
+            value={dadosPef.nome}
+            onChange={(e) => handleChange('nome', e.target.value)}
+            placeholder="Nome do profissional"
+          />
+        </div>
+
+        {/* --- CAMPO DE E-MAIL (ESSENCIAL PARA O CONVITE) --- */}
+        <div className="input-group">
+          <label htmlFor="pef-add-email">E-mail</label>
+          <input
+            id="pef-add-email"
+            type="email"
+            value={dadosPef.email}
+            onChange={(e) => handleChange('email', e.target.value)}
+            placeholder="email@dominio.com"
+          />
+        </div>
+
+        {/* --- CAMPO DE CPF --- */}
+        <div className="input-group">
+          <label htmlFor="pef-add-cpf">CPF</label>
+          <input
+            id="pef-add-cpf"
+            type="text"
+            value={dadosPef.cpf}
+            onChange={(e) => handleChange('cpf', e.target.value)}
+            placeholder="000.000.000-00"
+          />
+        </div>
+
+        {/* --- TOGGLE DE ESTAGIÁRIO E CAMPO DE CREF --- */}
+        <div className="input-group-checkbox">
+          <input
+            id="pef-add-estagiario"
+            type="checkbox"
+            checked={dadosPef.is_estagiario}
+            onChange={(e) => handleChange('is_estagiario', e.target.checked)}
+          />
+          <label htmlFor="pef-add-estagiario">Este profissional é um estagiário</label>
+        </div>
+        <div className="input-group">
+          <label htmlFor="pef-add-cref">CREF</label>
+          <input
+            id="pef-add-cref"
+            type="text"
+            value={dadosPef.cref}
+            onChange={(e) => handleChange('cref', e.target.value)}
+            disabled={dadosPef.is_estagiario}
+            placeholder={dadosPef.is_estagiario ? 'Não aplicável para estagiários' : 'Ex: 012345-G/RJ'}
+          />
+        </div>
+      </div>
+        <div className="modal-actions">
+          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={handleSaveClick}>Salvar e Enviar Convite</button>
+        </div>
+      </div>
+    </div>
+  );
+}

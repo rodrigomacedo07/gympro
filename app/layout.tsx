@@ -1,7 +1,9 @@
 // ARQUIVO: app/layout.tsx
 
+
 import "./globals.css"; // ESTA LINHA É A MAIS IMPORTANTE
 import { Inter, Montserrat } from "next/font/google";
+import { AuthProvider } from "./contexts/AuthContext";
 
 // Configuração das fontes para otimização do Next.js
 const inter = Inter({
@@ -24,12 +26,16 @@ export const metadata = {
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${montserrat.variable}`}>
-      <body>{children}</body>
+    <html lang="pt-BR"> 
+    <body className={`${inter.variable} ${montserrat.variable}`}>
+      <AuthProvider>
+      {children}
+      </AuthProvider>
+      </body>
     </html>
   );
 }

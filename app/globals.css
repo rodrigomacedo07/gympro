@@ -1275,6 +1275,7 @@ select {
   margin-top: 0;
   margin-bottom: 20px;
 }
+
 /* Garante que o título não tenha margens que atrapalhem o alinhamento */
 .exercise-card-header h4 {
   margin: 0;
@@ -1326,7 +1327,10 @@ select {
   gap: var(--space-md);
   margin-bottom: 15px;
 }
-
+/* Garante um respiro na parte inferior do card de edição de exercício */
+.exercise-edit-card .card-section:last-child {
+  padding-bottom: 0.5rem; /* ~8px */
+}
 .exercise-inputs .input-row .input-group {
   flex: 1; /* Faz os 3 campos dividirem o espaço igualmente */
 }
