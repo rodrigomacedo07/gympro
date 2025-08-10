@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "echo \"URL da Vercel: $NEXT_PUBLIC_SUPABASE_URL\" && next build",
     "start": "next start",
     "lint": "next lint"
   },
