@@ -150,8 +150,7 @@ type NovoPefData = {
   cref: string;
   is_estagiario: boolean;
 };
-// Forçando um novo deploy na Vercel
-
+// Forçando um novo deploy na Verce
 // =======================================================
 // 3. CONSTANTES E FUNÇÕES AUXILIARES
 // =======================================================
@@ -930,21 +929,7 @@ const router = useRouter();
 const { user, loading, signOut } = useAuth();
 const [profile, setProfile] = useState<PEF | null>(null);
 const [alunos, setAlunos] = useState<Aluno[]>(JSON.parse(JSON.stringify(initialMockData.alunos)));
-const [treinadores, setTreinadores] = useState<PEF[]>(
-initialMockData.treinadores.map(pef => {
-  // Lógica para definir os papéis iniciais
-  const roles: ('admin' | 'pef')[] = ['pef']; // Todos são PEFs por padrão
-  if (pef.id === 1) {
-    roles.push('admin'); // Apenas Carlos Andrade (ID 1) é admin
-  }
-
-  return {
-    ...pef,
-    roles: roles,
-    status: 'ativo',
-    cpf: `000.000.000-${pef.id.toString().padStart(2, '0')}`, // CPF de exemplo para teste
-  };
-}));
+const [treinadores, setTreinadores] = useState<PEF[]>([]);
 const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
 
 /* --- ESTADOS DE UI (Controle de Visão e Filtros) --- */
@@ -1116,6 +1101,30 @@ useEffect(() => {
     fetchProfile();
   }
 }, [user]); // Este efeito roda sempre que o 'user' mudar
+useEffect(() => {
+  const fetchAllPefs = async () => {
+    console.log("Buscando todos os perfis do Supabase...");
+
+    // A chamada correta para buscar a lista completa, sem filtros
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*');
+
+    if (error) {
+      console.error("Erro ao buscar a lista de PEFs:", error);
+    } else if (data) {
+      console.log("Perfis carregados do banco de dados:", data);
+      // Armazena a lista REAL no estado, substituindo a lista vazia
+      setTreinadores(data);
+    }
+  };
+
+  // Só executa a busca se tivermos um usuário logado
+  if (user) {
+    fetchAllPefs();
+  }
+  // A dependência [user] garante que a busca aconteça assim que o usuário for definido.
+}, [user]);
 
 /* --- HANDLERS E CALLBACKS (useCallback) --- */
 const onExcluirPlano = useCallback((alunoId: number, planoId: number) => {
