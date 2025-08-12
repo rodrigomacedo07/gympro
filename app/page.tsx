@@ -1763,46 +1763,36 @@ const handleResetPassword = useCallback((pefNome: string) => {
   }
 },[]);
 const handlePefSubmit = useCallback(async (novoPef: NovoPefData) => {
+    // Idealmente, adicione um estado de 'isSubmitting' para dar feedback ao usuário
+    
+    try {
+        const response = await fetch('/api/invite', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(novoPef), // Envia todos os dados do formulário
+        });
 
-    // Passo 1: Convidar o usuário no sistema de autenticação do Supabase
-    const { data, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
-      novoPef.email
-    );
+        const result = await response.json();
 
-    if (inviteError) {
-      console.error("Erro ao convidar usuário:", inviteError);
-      alert(`Erro ao convidar usuário: ${inviteError.message}`);
-      return;
+        if (!response.ok) {
+            // Lança um erro se a API retornar um status de erro
+            throw new Error(result.error || 'Falha ao convidar profissional.');
+        }
+        
+        alert(`Sucesso! ${result.message}`);
+        setAddPefModalOpen(false);
+        
+        // Para uma melhor UX, aqui você deve recarregar a lista de profissionais
+        // para que o novo apareça na tela sem precisar recarregar a página.
+        // Ex: fetchAllPefs(); 
+
+    } catch (error: any) {
+        console.error("Erro no processo de convite:", error);
+        alert(`Erro: ${error.message}`);
     }
-
-    if (data.user) {
-      // Passo 2: Se o convite funcionou, inserir o perfil na nossa tabela 'profiles'
-      const { error: insertError } = await supabase.from('profiles').insert({
-        id: data.user.id, // <<< O PONTO CRÍTICO: Usamos o ID do usuário recém-criado
-        nome: novoPef.nome,
-        cpf: novoPef.cpf,
-        cref: novoPef.is_estagiario ? null : novoPef.cref,
-        is_estagiario: novoPef.is_estagiario,
-        roles: ['pef'], // Todo novo usuário começa com a role 'pef'
-        status: 'ativo'
-      });
-
-      if (insertError) {
-        console.error("Erro ao inserir perfil:", insertError);
-        alert(`Erro ao salvar perfil: ${insertError.message}`);
-        // Aqui teríamos que lidar com o caso de um usuário de auth ter sido criado
-        // mas o perfil não (ex: deletar o usuário de auth recém-criado).
-        // Para o MVP, um alerta é suficiente.
-        return;
-      }
-
-      // Passo 3: Atualizar a lista de PEFs na tela (Opcional, mas boa UX)
-      // Para isso, teríamos que buscar o perfil recém-criado.
-      // Por ora, um simples alerta de sucesso e fechar o modal é o suficiente.
-      alert(`Convite enviado com sucesso para ${novoPef.email}!`);
-      setAddPefModalOpen(false);
-    }
-  }, []); // Dependências vazias por enquanto
+}, []);
 
   // 3. Adicione a lógica de proteção de rota
   useEffect(() => {
