@@ -1788,11 +1788,15 @@ const handlePefSubmit = useCallback(async (novoPef: NovoPefData) => {
         // para que o novo apareça na tela sem precisar recarregar a página.
         // Ex: fetchAllPefs(); 
 
-    } catch (error: any) {
-        console.error("Erro no processo de convite:", error);
-        alert(`Erro: ${error.message}`);
+  } catch (error) {
+    console.error("Erro no processo de convite:", error);
+    if (error instanceof Error) {
+      alert(`Erro: ${error.message}`);
+    } else {
+      alert('Ocorreu um erro desconhecido durante o convite.');
     }
-}, []);
+  }
+}, [setAddPefModalOpen]);
 
   // 3. Adicione a lógica de proteção de rota
   useEffect(() => {
