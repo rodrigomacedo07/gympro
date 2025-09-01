@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from './contexts/AuthContext';
 import supabase from './lib/supabaseClient';
 
+
 /*import debounce from 'lodash.debounce';*/
 
 
@@ -30,33 +31,20 @@ import supabase from './lib/supabaseClient';
 // =======================================================
 
 // --- Modelos de Dados Principais ---
-interface ExercicioPlano {
-  id: number;
-  nome?: string; // Nome é opcional aqui, pois virá da Biblioteca de Exercícios
-  series: number | string; // Permite '4' ou "10-12"
-  repeticoes: string;
-  carga: string;
-  observacoes?: string; // O '?' indica que a propriedade é opcional
-}
-interface Plano {
-  id: number;
-  nome: string;
-  exercicios: ExercicioComEdicao[]; // <<< AGORA o plano aceita exercícios com o estado de edição
-  ativo: boolean;
-}
+
 interface Aluno {
-  id: number;
+  id: string;
   nome: string;
   cpf: string;
-  status: "disponivel" | "aguardando" | "em_treinamento";
-  pef_responsavel_id?: number | null;
+  matricula_status: "ativo" | "inativo" | "trancado";
   ritmo?: "no_ritmo" | "atrasado";
-  status_timestamp: string; // Mantido como string, representa um ISO Date
-  planos: Plano[];
+  matricula_status_timestamp: string; // Mantido como string, representa um ISO Date
+  treino: Treino[];
   historico?: HistoricoItem[];
 }
 interface PEF {
-  id: number;
+  email: string;
+  id: string;
   nome: string;
   is_estagiario: boolean;
   cref: string | null;
@@ -64,9 +52,33 @@ interface PEF {
   status: 'ativo' | 'inativo';
   cpf: string;
 }
-interface ExercicioBiblioteca {
-  id: number;
+interface Exercicio {
+  id: string;
   nome: string;
+  grupo_muscular?: string | null;
+}
+interface Treino {
+  id: string;
+  aluno_id: string;
+  nome: string;
+  descricao?: string | null;
+  status: 'ativo' | 'inativo';
+  pef_criador_id?: string | null;
+  pef_ultima_alteracao_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  exercicios: TreinoExercicio[];
+}
+interface TreinoExercicio {
+  id: string;
+  treino_id: string;
+  exercicio_id: string;
+  ordem?: number;
+  series: number | string;
+  repeticoes: number | string;
+  carga: number | string;
+  observacoes?: string;
+  exercicio?: Exercicio; // <-- CORREÇÃO: Propriedade adicionada para o JOIN
 }
 interface CsvRow {
   Nome?: string; // Coluna obrigatória
@@ -74,71 +86,134 @@ interface CsvRow {
   // Adicione outras colunas se necessário
 }
 interface LiveExercise {
-  id: number;
+  id: string;
   status: "nao-iniciado" | "executando" | "finalizado";
 }
 interface ActiveSession {
-  alunoId: number;
-  planoId: number;
+  id: string;
+  alunoId: string;
+  treinoId: string;
+  pef_responsavel_id?: string | null;
   startTime: string; // Mantido como string, representa um ISO Date
   exercises: LiveExercise[];
+  totalPlanejados?: number; 
 }
 
-// --- Tipos para Props de Componentes ---
+// --- 2. Tipos de Estado (Para uso em Formulários e UI) ---
 
-// Este é o tipo que unifica ExercicioPlano e ExercicioComEdicao.
-// É um exercício de um plano, que PODE estar em modo de edição no formulário.
-interface ExercicioComEdicao extends ExercicioPlano {
-  nome: string; // Na UI, o nome é obrigatório
+interface ExercicioParaFormulario {
+  id?: string; // ID da 'treino_exercicios' se for um exercício existente
+  tempId?: string;
+  exercicio_id: string;
+  nome: string;
+  series: number | string; // CORREÇÃO: Unificado
+  repeticoes: string | number; // CORREÇÃO: Unificado
+  carga: string | number; // CORREÇÃO: Unificado
+  observacoes?: string;
   isEditing?: boolean;
 }
+// Representa o estado completo de um treino enquanto está sendo editado
+interface TreinoParaFormulario extends Omit<Treino,  'exercicios'> { // Omitimos aluno_id pois já temos o contexto do aluno
+  exercicios: ExercicioParaFormulario[];
+}
+type ExercicioParaModal = {
+  id: string; // ID da tabela 'treino_exercicios'
+  exercicio_id: string;
+  nome: string;
+  series: string | number;
+  repeticoes: string | number;
+  carga: string | number;
+  observacoes: string;
+};
+interface ExercicioDoTreino {
+  exercicio_id: string;
+  series: number;
+  repeticoes: string;
+  carga: string;
+  observacoes: string;
+  ordem: number;
+  exercicios: {  // ← Defina como objeto, não array
+    id: string;
+    nome: string;
+  };
+}
+interface ExercicioJoin {
+  id: string;
+  nome: string;
+}
+interface TreinoExercicioComJoin {
+  exercicio_id: string;
+  series: number;
+  repeticoes: string;
+  carga: string;
+  observacoes: string;
+  ordem: number;
+  exercicios: ExercicioJoin;
+}
+// --- 3. Tipos de Props (Para Componentes) ---
+
 interface ExercicioCardProps {
-  index: number
-  exercicio: ExercicioComEdicao;
+  index: number;
+  exercicio: ExercicioParaFormulario; // ATUALIZADO
   isExpanded: boolean;
   showActions: boolean;
   onToggleExpansion: () => void;
   onEdit: () => void;
   onDelete: () => void;
   isEditable?: boolean;
-  onExercicioChange?: (campo: keyof ExercicioPlano, valor: string | number) => void;
-  onSuggestionSelect?: (suggestion: ExercicioBiblioteca) => void;
+  onExercicioChange?: (campo: keyof ExercicioParaFormulario, valor: string | number) => void; // ATUALIZADO
+  onSuggestionSelect?: (suggestion: Exercicio) => void; // ATUALIZADO
   validationErrors?: Record<string, string>;
-  suggestions: ExercicioBiblioteca[];
+  suggestions: Exercicio[]; // ATUALIZADO
   isSearchActive: boolean;
   onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
-interface EditExerciseModalProps {
-  exercicio: ExercicioComEdicao | null;
+type ExercicioEditavel = {
+  nome?: string;
+  series: number | string;
+  repeticoes: string | number;
+  carga: string | number;
+  observacoes?: string;
+};
+// A interface agora usa um "Tipo Genérico" <T>
+interface EditExerciseModalProps<T extends ExercicioEditavel> {
+  exercicio: T | null;
   onClose: () => void;
-  onSave: (exercicioAtualizado: ExercicioComEdicao) => void;
+  onSave: (exercicioAtualizado: T) => void;
 }
-interface PlanoEditViewProps {
+interface TreinoEditViewProps {
   aluno: Aluno;
-  plano: Plano;
+  treino: TreinoParaFormulario; // ATUALIZADO para usar o tipo de estado
   onBack: () => void;
-  onSave: (plano: Plano) => void;
-  onPlanoChange: (campo: keyof Plano, valor: string) => void;
+  onSave: (treino: TreinoParaFormulario) => void; // ATUALIZADO para usar o tipo de estado
+  onTreinoChange: (campo: keyof Omit<TreinoParaFormulario, 'exercicios'>, valor: string) => void;
   onExercicioChange: (
-    exercicioId: number,
-    campo: keyof ExercicioPlano,
+    exercicioIndex: number, // Usando índice para segurança
+    campo: keyof ExercicioParaFormulario,
     valor: string | number
   ) => void;
-  onExercicioSelect: (exercicioIndex: number, suggestion: ExercicioBiblioteca) => void; // <<< NOVA PROP
+  onExercicioSelect: (exercicioIndex: number, suggestion: Exercicio) => void;
   onAddExercicio: () => void;
-  onDeleteExercicio: (exercicioId: number) => void; // <<< A definição correta
+  onExcluirExercicio: (exercicioId: string) => void; // Usando ID
   validationErrors: Record<string, string>;
   setValidationErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }
 interface HistoricoItem {
   id: number; // ID único para cada entrada do histórico
   data: string; // Data do treino no formato ISO (ex: new Date().toISOString())
-  planoId: number; // ID do plano que foi executado
-  nomePlano: string; // Nome do plano executado (ou "Não houve treino")
-  status: 'completo' | 'incompleto' | 'nao-realizado'; // O status do "farol"
+  treinoId: string; // ID do Treino que foi executado
+  nomeTreino: string; // Nome do Treino executado (ou "Não houve treino")
+  status: 'completo' | 'incompleto' | 'nao_realizado'; // O status do "farol"
 }
-//Excluído pra garantir deploy da primeira versão no Vercel
-/*type AlunoStatus = "disponivel" | "aguardando" | "em_treinamento";*/
+// NOVO TIPO: Representa um exercício com todos os detalhes para a tela de workout
+interface ExercicioDeSessao extends TreinoExercicio {
+  nome: string;
+}
+type ViewState = {
+  type: "dashboard" | "select_plan"| "workout" | "gerenciar_treinos" | "editar_treino" |"gerenciar_perfis";
+  alunoId: string | null;
+  treinoId?: string;
+};
 type ExercicioError = {
   series?: string;
   repeticoes?: string;
@@ -150,6 +225,15 @@ type NovoPefData = {
   cref: string;
   is_estagiario: boolean;
 };
+type ExercicioComStatus = ExercicioDeSessao & { status: LiveExercise["status"] };
+type Ritmo = 'no_ritmo' | 'atrasado';
+type HistoricoRow = {
+  session_date: string;
+  treino_nome: string;
+  status: 'completo' | 'incompleto' | 'nao_realizado';
+  ritmo?: 'no_ritmo' | 'atrasado';
+};
+
 // Forçando um novo deploy na Verce
 // =======================================================
 // 3. CONSTANTES E FUNÇÕES AUXILIARES
@@ -273,24 +357,47 @@ const resetIcon = (
       <path d="M22 4L12 14.01l-3-3" />
     </svg>
   );
+const spinnerIcon = (
+<svg
+        className="loading-page-spinner-svg"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+          style={{ opacity: 0.2 }}
+        ></circle>
+        <path
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
+);
+
 
 
 /* --- FUNÇÕES UTILITÁRIAS PURAS --- */
-const timeAgoFn = (minutes: number) =>new Date(new Date().getTime() - minutes * 60000).toISOString();
 
-const calculateTimeAgo = (timestamp: string): string => {
-      const now = new Date();
-      const past = new Date(timestamp);
-      const diffInSeconds = Math.floor((now.getTime() - past.getTime()) / 1000);
-      if (diffInSeconds < 0) return "";
+function calculateTimeAgo(timestamp: string): string {
+  if (!timestamp) return "";
+  const now = Date.now();
+  const past = new Date(timestamp).getTime();
+  const diffSec = Math.floor((now - past) / 1000);
+  if (diffSec < 0 || Number.isNaN(diffSec)) return "";
 
-      const minutes = Math.floor(diffInSeconds / 60);
-      const hours = Math.floor(minutes / 60);
+  const minutes = Math.floor(diffSec / 60);
+  if (minutes < 1) return "agora";
+  if (minutes < 60) return `há ${minutes}m`;
 
-      if (hours > 0) return `há ${hours}h ${minutes % 60}m`;
-      if (minutes > 0) return `há ${minutes}m`;
-      return "agora";
-};
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `há ${hours}h${rest ? ` ${rest}m` : ""}`;
+}
 const normalizeString = (str: string) => {
   return str
     .normalize("NFD") // Separa acentos e caracteres base
@@ -305,39 +412,9 @@ const formatarDataHistorico = (data: Date): string => {
   const diaSemana = data.toLocaleString('pt-BR', { weekday: 'short' }).replace('.', '');
   return `${dia}.${mes} ${diaSemana}`;
 };
-function calculateRhythm(
-  startTime: Date,
-  exercisesStarted: number,
-  totalExercises: number
-): "no_ritmo" | "atrasado" {
-  const RHYTHM_TOLERANCE_MARGIN = 0.2;
-  const WORKOUT_DURATION_MINUTES = 60;
-  const timeElapsedMs = new Date().getTime() - startTime.getTime();
-  const timeElapsedMinutes = timeElapsedMs / (1000 * 60);
-  if (
-    timeElapsedMinutes < 1 ||
-    totalExercises === 0
-  ) {
-    return "no_ritmo";
-  }
-  const timeRatio = timeElapsedMinutes / WORKOUT_DURATION_MINUTES;
-  const exerciseRatio = exercisesStarted / totalExercises;
 
-console.log(
-  `🧠 Ritmo calculado → exercícios: ${exercisesStarted}/${totalExercises}, ` +
-  `tempo: ${timeElapsedMinutes.toFixed(2)}min, ` +
-  `timeRatio: ${timeRatio.toFixed(2)}, ` +
-  `exerciseRatio: ${exerciseRatio.toFixed(2)}, ` +
-  `status: ${timeRatio > exerciseRatio + RHYTHM_TOLERANCE_MARGIN ? 'atrasado' : 'no_ritmo'}`
-);
-
-  if (timeRatio > exerciseRatio + RHYTHM_TOLERANCE_MARGIN) {
-    return "atrasado";
-  }
-  return "no_ritmo";
-}
 /* --- DADOS MOCKADOS --- */
-const initialMockData = {
+/*const initialMockData = {
   treinadores: [
     {
       id: 1,
@@ -638,7 +715,7 @@ const initialMockData = {
       pef_responsavel_id: null,
       ritmo: undefined,
       status_timestamp: timeAgoFn(10),
-      planos: [
+      treinos: [
         {
           id: 301,
           nome: "Treino de Janeiro",
@@ -662,7 +739,7 @@ const initialMockData = {
       pef_responsavel_id: null,
       ritmo: undefined,
       status_timestamp: timeAgoFn(5),
-      planos: [
+      treinos: [
         {
           id: 303,
           nome: "Full Body (Iniciante)",
@@ -678,7 +755,7 @@ const initialMockData = {
       pef_responsavel_id: 2,
       ritmo: "no_ritmo",
       status_timestamp: timeAgoFn(25),
-      planos: [
+      treinos: [
         {
           id: 304,
           nome: "Treino Atual de Força",
@@ -700,7 +777,7 @@ const initialMockData = {
       pef_responsavel_id: null,
       ritmo: undefined,
       status_timestamp: timeAgoFn(15),
-      planos: [
+      treinos: [
         {
           id: 401,
           nome: "Treino A - Peito, Ombro e Tríceps",
@@ -856,7 +933,7 @@ const initialMockData = {
   status_timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // começou há 5min
   pef_responsavel_id: 1,
   ritmo: "no_ritmo",
-  planos: [
+  treinos: [
     {
       id: 1,
       nome: "Plano Mock",
@@ -872,9 +949,26 @@ const initialMockData = {
   ],
 }
   ],
-} as const;
+} as const; */
 
 /* --- FUNÇÕES DE VALIDAÇÃO PURAS --- */
+function dedupSessionsByAluno<T extends { alunoId: string; startTime?: string | Date }>(sessions: T[]): T[] {
+  const latestByAluno = new Map<string, T>();
+
+  for (const s of sessions || []) {
+    const prev = latestByAluno.get(s.alunoId);
+    if (!prev) {
+      latestByAluno.set(s.alunoId, s);
+      continue;
+    }
+    const prevTs = prev.startTime ? new Date(prev.startTime).getTime() : -Infinity;
+    const currTs = s.startTime ? new Date(s.startTime).getTime() : -Infinity;
+    if (currTs >= prevTs) latestByAluno.set(s.alunoId, s);
+  }
+
+  return Array.from(latestByAluno.values());
+}
+
 const validateExercicio = (): { isValid: boolean; errors: ExercicioError } => {
   const errors: ExercicioError = {};
 
@@ -883,42 +977,381 @@ const validateExercicio = (): { isValid: boolean; errors: ExercicioError } => {
     errors,
   };
 };
-const validatePlano = (plano: Plano): { isValid: boolean; errors: Record<string, string> } => {
+const validateTreino = (treino: TreinoParaFormulario): { isValid: boolean; errors: Record<string, string> } => {
   const errors: Record<string, string> = {};
 
-  // Regra 1: Nome do plano é obrigatório
-  if (!plano.nome.trim()) {
-    errors.planoNome = "Nome do plano é obrigatório";
+  // Regra 1: Nome do treino é obrigatório
+  if (!treino.nome?.trim()) {
+    errors.treinoNome = "Nome do treino é obrigatório";
   }
 
-  // Regra 2: Plano deve ter pelo menos um exercício
-  if (plano.exercicios.length === 0) {
-    errors.form = "O plano deve ter pelo menos um exercício.";
-  }
+  // Regra 2: Treino deve ter pelo menos um exercício
+  if (!treino.exercicios || treino.exercicios.length === 0) {
+    errors.form = "O treino deve ter pelo menos um exercício.";
+  } else {
+    // Regra 3: Validar cada exercício da lista
+    treino.exercicios.forEach((ex, index) => {
+      const prefix = `exercicios[${index}]`;
 
-  // Regra 3: Validar cada exercício da lista
-  plano.exercicios.forEach((ex, index) => {
-    const prefix = `exercicios[${index}].`;
-    
-    if (!ex.nome.trim()) {
-      errors[`${prefix}nome`] = "Nome do exercício é obrigatório";
-    } else {
-      // Garante que o nome do exercício é um da nossa biblioteca
-      const exercicioExisteNaBiblioteca = initialMockData.exercicios_biblioteca.some(
-        libEx => normalizeString(libEx.nome) === normalizeString(ex.nome)
-      );
-      if (!exercicioExisteNaBiblioteca) {
-        errors[`${prefix}nome`] = "Selecione um exercício válido da lista de sugestões.";
+      // Garante que o nome do exercício não está vazio
+      if (!ex.nome?.trim()) {
+        errors[`${prefix}.nome`] = "Nome do exercício é obrigatório";
       }
-    }
-  });
+      
+      // Validação moderna: Garante que um exercício foi selecionado da busca (verificando o exercicio_id)
+      if (!ex.exercicio_id) {
+        errors[`${prefix}.nome`] = "Selecione um exercício válido da lista de sugestões.";
+      }
+    });
+  }
 
   return {
     isValid: Object.keys(errors).length === 0,
-    errors
+    errors,
   };
 };
+// Função para validar os dados do formulário de NOVO PEF
+const validateNewPefData = (pefData: NovoPefData): Record<string, string> => {
+  const errors: Record<string, string> = {};
 
+  if (!pefData.nome.trim()) {
+    errors.nome = "O nome completo é obrigatório.";
+  }
+  if (!pefData.email.trim()) {
+    errors.email = "O e-mail é obrigatório.";
+  } else if (!/\S+@\S+\.\S+/.test(pefData.email)) {
+    // Validação simples de formato de e-mail
+    errors.email = "O formato do e-mail parece inválido.";
+  }
+    // Validação do CPF
+  if (!pefData.cpf.trim()) {
+    errors.cpf = "O CPF é obrigatório."
+  }
+    // Validação condicional do CREF
+  if (!pefData.is_estagiario && !pefData.cref.trim()) {
+    errors.cref = "O CREF é obrigatório para profissionais formados."
+  }
+  return errors;
+};
+
+// Substitua sua função searchExercicios inteira por esta
+
+async function searchExercicios(searchTerm: string) {
+  // Retorna uma lista vazia se o termo for muito curto
+  if (!searchTerm || searchTerm.length < 2) {
+    return [];
+  }
+
+  // AGORA: usa .rpc() para chamar nossa função customizada no Supabase
+  const { data, error } = await supabase.rpc('buscar_exercicios_sem_acento', {
+    p_search_term: searchTerm
+  });
+
+  if (error) {
+    console.error('Erro ao buscar exercícios:', error);
+    return []; // Retorna um array vazio em caso de erro
+  }
+  return data as Exercicio[];
+}
+
+// Esta função salva o treino e seus exercícios
+async function createTreinoCompleto(treinoData: Partial<Treino>, exerciciosDoTreino: ExercicioParaFormulario[], pefId: string) {
+  // 1. Prepara os dados do treino, incluindo quem criou/alterou
+  const dadosParaSalvar = {
+    ...treinoData,
+    pef_criador_id: pefId,
+    pef_ultima_alteracao_id: pefId
+  };
+
+  
+  // 2. Insere na tabela 'treinos' e pega o registro criado de volta
+  const { data: novoTreino, error: erroTreino } = await supabase
+    .from('treinos')
+    .insert(dadosParaSalvar)
+    .select()
+    .single();
+
+  if (erroTreino) {
+    console.error('Erro ao criar o treino:', erroTreino);
+    throw erroTreino; // Lança o erro para ser tratado na UI
+  }
+
+  // 3. Prepara os dados dos exercícios, adicionando o ID do novo treino
+  const exerciciosParaInserir = exerciciosDoTreino.map(ex => ({
+    treino_id: novoTreino.id,
+    exercicio_id: ex.exercicio_id, // Assumindo que o ID do exercício selecionado está aqui
+    series: ex.series === '' ? null : Number(ex.series),
+    repeticoes: ex.repeticoes,
+    carga: ex.carga,
+    observacoes: ex.observacoes,
+    // ordem: ex.ordem // Se você tiver um campo de ordem
+  }));
+
+  // 4. Insere todos os exercícios na tabela 'treino_exercicios'
+  const { error: erroExercicios } = await supabase
+    .from('treino_exercicios')
+    .insert(exerciciosParaInserir);
+
+  if (erroExercicios) {
+    console.error('Erro ao salvar os exercícios do treino:', erroExercicios);
+    // Limpeza: Deleta o treino que foi criado para não deixar dados órfãos
+    await supabase.from('treinos').delete().eq('id', novoTreino.id);
+    throw erroExercicios;
+  }
+
+  return novoTreino; // Sucesso!
+}
+
+async function updateTreinoCompleto(treinoId: string, treinoData: Partial<Treino>, exerciciosDoTreino: ExercicioParaFormulario[], pefId: string) {
+  try {
+    // 1. Atualiza o registro principal na tabela 'treinos'
+    const { data: treinoAtualizado, error: erroTreino } = await supabase
+      .from('treinos')
+      .update({
+        ...treinoData,
+        pef_ultima_alteracao_id: pefId
+      })
+      .eq('id', treinoId)
+      .select()
+      .single();
+
+    if (erroTreino) {
+      console.error('Erro ao atualizar o treino:', erroTreino);
+      throw erroTreino;
+    }
+
+    // 2. Prepara os dados dos exercícios para a inserção
+    const exerciciosParaInserir = exerciciosDoTreino.map(ex => ({
+      treino_id: treinoId,
+      exercicio_id: ex.exercicio_id,
+      series: ex.series === '' ? null : Number(ex.series),
+      repeticoes: ex.repeticoes,
+      carga: ex.carga,
+      observacoes: ex.observacoes,
+    }));
+
+    // 3. Deleta todos os exercícios antigos do treino
+    const { error: erroDelete } = await supabase
+      .from('treino_exercicios')
+      .delete()
+      .eq('treino_id', treinoId);
+
+    if (erroDelete) {
+      console.error('Erro ao deletar exercícios antigos:', erroDelete);
+      throw erroDelete;
+    }
+
+    // 4. Insere os novos exercícios
+    const { error: erroInsert } = await supabase
+      .from('treino_exercicios')
+      .insert(exerciciosParaInserir);
+
+    if (erroInsert) {
+      console.error('Erro ao inserir novos exercícios:', erroInsert);
+      throw erroInsert;
+    }
+
+    return treinoAtualizado; // Retorna o treino atualizado
+  } catch (error) {
+    console.error('Erro na função updateTreinoCompleto:', error);
+    throw error;
+  }
+}
+
+async function deleteTreino(treinoId: string) {
+  const { error } = await supabase
+    .from('treinos')
+    .delete()
+    .eq('id', treinoId);
+
+  if (error) {
+    console.error('Erro ao deletar o treino:', error);
+    throw error;
+  }
+}
+
+// Esta função busca um treino e todos os seus exercícios detalhados
+async function fetchTreinoComExercicios(treinoId: string) {
+  const { data: treinoData, error: treinoError } = await supabase
+    .from('treinos')
+    .select('*')
+    .eq('id', treinoId)
+    .single();
+
+  if (treinoError) throw treinoError;
+
+  const { data: exerciciosDoTreinoData, error: exerciciosError } = await supabase
+    .from('treino_exercicios')
+    .select(`
+      exercicio_id, series, repeticoes, carga, observacoes, ordem,
+      exercicios!inner ( id, nome )
+    `)
+    .eq('treino_id', treinoId)
+    .order('ordem');
+
+  if (exerciciosError) throw exerciciosError;
+
+  const exerciciosData = exerciciosDoTreinoData as unknown as TreinoExercicioComJoin[];
+
+  const TreinoParaFormulario = {
+    ...treinoData,
+    exercicios: exerciciosData.map(item => ({
+      tempId: item.exercicio_id,
+      exercicio_id: item.exercicios.id,
+      nome: item.exercicios.nome,
+      series: item.series ?? '',
+      repeticoes: item.repeticoes ?? '',
+      carga: item.carga ?? '',
+      observacoes: item.observacoes ?? '',
+      orden: item.ordem ?? '',
+    }))
+  };
+
+  return TreinoParaFormulario;
+}
+
+async function fetchHistoricoUltimos30(alunoId: string): Promise<HistoricoRow[]> {
+  // --- CORREÇÃO: Voltamos a usar a data local, mas de forma segura ---
+  const hoje = new Date();
+
+  // Criamos uma data inicial para a query, 29 dias atrás.
+  const inicio = new Date(hoje);
+  inicio.setDate(hoje.getDate() - 29);
+  
+  // Formatamos a data inicial para o formato YYYY-MM-DD
+  const ano = inicio.getFullYear();
+  const mes = String(inicio.getMonth() + 1).padStart(2, '0');
+  const dia = String(inicio.getDate()).padStart(2, '0');
+  const minISO = `${ano}-${mes}-${dia}`;
+  
+  const { data, error } = await supabase
+    .from('treino_historico')
+    .select(`session_date, status, ritmo_final, treino_id, treinos:treino_id(nome)`)
+    .eq('aluno_id', alunoId)
+    .gte('session_date', minISO)
+    .order('session_date', { ascending: false });
+
+  if (error) {
+    console.error('[historico] erro no select:', error);
+    return [];
+  }
+
+  const porData = new Map<string, any>(data.map((r: any) => [r.session_date, r]));
+
+  const rows: HistoricoRow[] = [];
+
+  for (let i = 0; i < 30; i++) {
+    const dt = new Date(hoje);
+    dt.setDate(hoje.getDate() - i);
+
+    // --- CORREÇÃO: Gerando a chave de data de forma segura, sem toISOString() ---
+    const keyAno = dt.getFullYear();
+    const keyMes = String(dt.getMonth() + 1).padStart(2, '0');
+    const keyDia = String(dt.getDate()).padStart(2, '0');
+    const key = `${keyAno}-${keyMes}-${keyDia}`;
+
+    const r = porData.get(key);
+    if (r) {
+      let treino_nome = '-';
+      if (r.treinos) {
+        if (Array.isArray(r.treinos)) {
+          treino_nome = String(r.treinos[0]?.nome ?? '-');
+        } else {
+          treino_nome = String((r.treinos as { nome?: string })?.nome ?? '-');
+        }
+      }
+      const status = r.status as 'completo' | 'incompleto' | 'nao_realizado';
+      const ritmo = r.ritmo_final as 'no_ritmo' | 'atrasado' | undefined;
+      rows.push({ session_date: key, treino_nome, status, ...(ritmo ? { ritmo } : {}) });
+    } else {
+      rows.push({ session_date: key, treino_nome: 'Não houve treino', status: 'nao_realizado' });
+    }
+  }
+
+  return rows;
+}
+/**
+ * Busca a lista completa de perfis de PEFs.
+ */
+const fetchAllPefs = async () => {
+  // A chamada RPC agora busca na nossa nova função que já faz o JOIN
+  const { data, error } = await supabase.rpc('get_all_pef_profiles_with_email');
+  
+  if (error) {
+    console.error("Erro ao buscar PEFs:", error);
+    return [];
+  }
+  return data || [];
+};
+
+/**
+ * Busca a biblioteca completa de exercícios.
+ */
+const fetchExerciciosBiblioteca = async () => {
+  const { data, error } = await supabase.from('exercicios').select('*');
+  if (error) {
+    console.error('Erro ao buscar Biblioteca de Exercícios:', error);
+    return [];
+  }
+  return data || [];
+};
+
+/**
+ * Busca todas as sessões de treino atualmente ativas.
+ */
+const fetchActiveSessions = async () => {
+  const { data, error } = await supabase.from('sessoes_ativas').select('*');
+  if (error) {
+    console.error('Erro ao buscar Sessões Ativas:', error);
+    return [];
+  }
+
+  const formattedData = (data ?? []).map((session: any) => ({
+    id: session.id,
+    alunoId: session.aluno_id,          // normaliza para camelCase
+    treinoId: session.treino_id,
+    pef_responsavel_id: session.pef_responsavel_id,
+    startTime: session.start_time,      // normaliza para camelCase
+    exercises: (session.exercises ?? []) as LiveExercise[], // garante array
+  }));
+
+  // 🔑 evita duplicidade por aluno
+  return dedupSessionsByAluno(formattedData);
+};
+
+
+
+/**
+ * Busca a lista completa de alunos e "hidrata" cada um com seus treinos e exercícios.
+ * Esta é a função mais complexa e importante.
+ */
+const fetchAllAlunosCompletos = async () => {
+  // 1. Busca a base de alunos
+  const { data: alunosBase, error: alunosError } = await supabase.from('alunos').select('id, nome, cpf, matricula_status, matricula_status_timestamp');
+  if (alunosError || !alunosBase) {
+    console.error("Erro ao buscar Alunos:", alunosError);
+    return [];
+  }
+
+  // 2. Hidrata cada aluno com seus treinos e exercícios
+  const alunosCompletos = await Promise.all(
+    alunosBase.map(async (aluno) => {
+      const { data: treinos, error: treinosError } = await supabase
+        .from('treinos')
+        .select('*, treino_exercicios(*, exercicio:exercicios(id, nome))') // Busca aninhada de exercícios
+        .eq('aluno_id', aluno.id);
+
+      if (treinosError) {
+        console.error(`Erro ao buscar treinos para o aluno ${aluno.id}`, treinosError);
+        return { ...aluno, treino: [] }; // Retorna aluno mesmo se os treinos falharem
+      }
+
+      const treinosHidratados = treinos.map(t => ({...t, exercicios: t.treino_exercicios || []}));
+      return { ...aluno, treino: treinosHidratados };
+    })
+  );
+  return alunosCompletos;
+};
 
 // =======================================================
 // 4. COMPONENTE PRINCIPAL (PAGE)
@@ -926,99 +1359,229 @@ const validatePlano = (plano: Plano): { isValid: boolean; errors: Record<string,
 export default function Page() {
   /* --- ESTADOS PRINCIPAIS DE DADOS --- */
 const router = useRouter();
-const { user, loading, signOut } = useAuth();
+const {user, loading, signOut } = useAuth();
 const [profile, setProfile] = useState<PEF | null>(null);
-const [alunos, setAlunos] = useState<Aluno[]>(JSON.parse(JSON.stringify(initialMockData.alunos)));
+const [alunos, setAlunos] = useState<Aluno[]>([]);
 const [treinadores, setTreinadores] = useState<PEF[]>([]);
 const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+const [exerciciosBiblioteca, setExerciciosBiblioteca] = useState<Exercicio[]>([]);
+
+
 
 /* --- ESTADOS DE UI (Controle de Visão e Filtros) --- */
-const [view, setView] = useState<{type:| "dashboard" | "select_plan"| "workout" | "gerenciar_planos" | "editar_plano" |"gerenciar_perfis";alunoId: number | null;}>({ type: "dashboard", alunoId: null });
+const [view, setView] = useState<ViewState>({ type: "dashboard", alunoId: null });
 const [statusFilter, setStatusFilter] = useState("todos");
 const [nameFilter, setNameFilter] = useState("");
 const [pefFilter, setPefFilter] = useState('ativo');
-const [pefSearch, setPefSearch] = useState('') 
+const [pefSearch, setPefSearch] = useState('')
+const [searchResults, setSearchResults] = useState<{ id: string; nome: string }[]>([]);
+const [isWorkoutLoading, setWorkoutLoading] = useState(false);
 
 /* --- ESTADOS DE UI (Controle de Modais e Menus) --- */
 const [alunoEmEdicao, setAlunoEmEdicao] = useState<Aluno | null>(null);
-const [planoEmEdicao, setPlanoEmEdicao] = useState<Plano | null>(null);
+const [treinoEmEdicao, setTreinoEmEdicao] = useState<TreinoParaFormulario | null>(null);
 const [pefEmEdicao, setPefEmEdicao] = useState<PEF | null>(null);
-const [openAlunoMenuId, setOpenAlunoMenuId] = useState<number | null>(null);
-const [exercicioEmEdicao, setExercicioEmEdicao] = useState<{
-alunoId: number;
-planoId: number;
-exercicio: ExercicioComEdicao;
-} | null>(null);
+const [openAlunoMenuId, setOpenAlunoMenuId] = useState<string | null>(null);
 const [isHeaderMenuOpen, setHeaderMenuOpen] = useState(false);// Controla a visibilidade do menu de 3 pontos no cabeçalho
 const [isUploadModalOpen, setUploadModalOpen] = useState(false);// Controla a visibilidade do modal de upload de CSV
 const [alunoParaVerHistorico, setAlunoParaVerHistorico] = useState<Aluno | null>(null);
 const [activeTrainingTime, setActiveTrainingTime] = useState<string>('');
+const [historicoOpen, setHistoricoOpen] = useState<{ alunoId: string | null; loading: boolean } | null>(null);
+const [historicoRows, setHistoricoRows] = useState<HistoricoRow[]>([]);
 
-const [timeAgoToDisplay, setTimeAgoToDisplay] = useState<Record<number, string>>({});
+const [isGerenciarTreinoModalOpen, setGerenciarTreinoModalOpen] = useState(false);
+const [exercicioEmEdicao, setExercicioEmEdicao] = useState<ExercicioParaModal | null>(null);
+
+
+const [timeAgoToDisplay, setTimeAgoToDisplay] = useState<Record<string, string>>({});
 const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 const headerMenuRef = useRef<HTMLDivElement>(null);
 const [isAddPefModalOpen, setAddPefModalOpen] = useState(false); 
+const [perfisCarregando, setPerfisCarregando] = useState(true);
+const [tempoDeTreino, setTempoDeTreino] = useState("00:00:00");
+const [exerciciosDoTreino, setExerciciosDoTreino] = useState<ExercicioDeSessao[]>([]);
+const [treinoAtivo, setTreinoAtivo] = useState<Treino | null>(null);
+const [ritmosByAluno, setRitmosByAluno] = useState<Record<string, Ritmo>>({});
+
     
   /* --- ESTADOS DERIVADOS E Refs --- */
 const activeAluno = view.alunoId ? alunos.find((a) => a.id === view.alunoId) : null;
 const activeSession = activeAluno ? activeSessions.find((s) => s.alunoId === activeAluno.id) : null;
 
-  /* --- EFEITOS COLATERAIS (useEffect) --- */
+const sessionsRef = useRef<ActiveSession[]>([]);
 useEffect(() => {
-  const updateAllTimers = () => {
-    // Atualiza os timers dos cards de aluno
-    const newTimes: Record<number, string> = {};
-    alunos.forEach(aluno => {
-      newTimes[aluno.id] = calculateTimeAgo(aluno.status_timestamp);
-    });
-    setTimeAgoToDisplay(newTimes);
+  sessionsRef.current = activeSessions;
+}, [activeSessions]);
+
+const iniciandoSessaoRef = useRef<string | null>(null);
+
+const finishingRef = useRef(false);
+
+function computeRitmos(sessions: ActiveSession[]) {
+  const map: Record<string, 'no_ritmo' | 'atrasado'> = {};
+  for (const s of sessions) {
+    // --- CORREÇÃO APLICADA AQUI ---
+    // 1. Buscamos o 'total' de exercícios diretamente do plano de treino original.
+    // Esta é a fonte de dados correta e consistente.
+    const total = getTotalExerciciosPlano(s.alunoId, s.treinoId);
+
+    // 2. Se não há um plano de treino válido ou não há hora de início, pulamos o cálculo.
+    if (!total || !s.startTime) continue;
+
+    // 3. O resto da lógica permanece o mesmo, agora com o 'total' correto.
+    const finalizados = s.exercises?.filter(ex => ex.status === 'finalizado').length ?? 0;
+    const ritmo = calcularRitmo(String(s.startTime), finalizados, total);
+    map[String(s.alunoId)] = ritmo;
+  }
+  return map;
+}
+
+const statusById = useMemo(() => {
+  // Ajuste: use 'activeSession' que é a variável disponível no Page
+  if (!activeSession) return new Map();
+  const m = new Map<string, LiveExercise["status"]>();
+  for (const ex of activeSession.exercises ?? []) m.set(ex.id, ex.status);
+  return m;
+}, [activeSession]);
+
+const exerciciosBase: ExercicioComStatus[] = useMemo(
+  () =>
+    (exerciciosDoTreino ?? []).map((ex) => ({
+      ...ex,
+      status: statusById.get(ex.exercicio_id) ?? "nao-iniciado",
+    })),
+  [exerciciosDoTreino, statusById]
+);
+
+const exerciciosParaRenderizar = useMemo(() => {
+  const statusOrder: Record<LiveExercise["status"], number> = {
+    executando: 1, "nao-iniciado": 2, finalizado: 3,
   };
+  return [...exerciciosBase].sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+}, [exerciciosBase]);
 
-  const activeSession = activeSessions.find(s => s.alunoId === view.alunoId);
-if (activeSession) {
-  setActiveTrainingTime(calculateTimeAgo(activeSession.startTime));
-}
+const carregarDadosIniciais = useCallback(async () => {
+  setPerfisCarregando(true);
 
-    // Atualiza o timer da sessão de treino ativa
-  updateAllTimers(); // Roda uma vez imediatamente
-  const intervalId = setInterval(updateAllTimers, 60000); // E depois a cada minuto
+  try {
+    if (!user) {
+      return;
+    }
 
-  return () => clearInterval(intervalId);
-}, [alunos, activeSessions, view.alunoId]);
-useEffect(() => {
-console.log("📦 useEffect de criação de sessões executado");
-console.log("alunos no momento:", alunos);
+    console.log("--- DEBUG: Iniciando busca de todos os dados iniciais...");
+    
+    const [
+      treinadoresData,
+      bibliotecaData,
+      sessoesData,
+      alunosData
+    ] = await Promise.all([
+      fetchAllPefs(),
+      fetchExerciciosBiblioteca(),
+      fetchActiveSessions(),
+      fetchAllAlunosCompletos()
+    ]);
+    
+    setTreinadores(treinadoresData);
+    setExerciciosBiblioteca(bibliotecaData);
+    setActiveSessions(sessoesData);
+    setAlunos(alunosData);
+    console.log("--- DEBUG: TODOS os dados foram carregados e o estado foi atualizado.");
+    
 
-setActiveSessions((prevSessions) => {
-  const updatedSessions = [...prevSessions];
+  } catch (error) {
+    console.error("--- DEBUG: Falha ao carregar dados iniciais:", error);
+  } finally {
+    setPerfisCarregando(false);
+  }
+}, [user]);
 
-  alunos.forEach((aluno) => {
-    const jaExisteSessao = prevSessions.some(
-      (s) => s.alunoId === aluno.id
-    );
-if (jaExisteSessao) {
-console.log(`🔁 Sessão já existe para aluno ${aluno.id}, não será recriada.`);
-}
+const shallowEqual = (a: Record<string, Ritmo>, b: Record<string, Ritmo>) => {
+  const ak = Object.keys(a), bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) if (a[k] !== b[k]) return false;
+  return true;
+};
 
-    if (!jaExisteSessao && aluno.status === "em_treinamento") {
-      const primeiroPlanoAtivo = aluno.planos.find((p) => p.ativo);
-      if (primeiroPlanoAtivo) {
-        updatedSessions.push({
-          alunoId: aluno.id,
-          planoId: primeiroPlanoAtivo.id,
-          startTime: aluno.status_timestamp,
-          exercises: primeiroPlanoAtivo.exercicios.map((ex) => ({
-            id: ex.id,
-            status: "nao-iniciado",
-          })),
-        });console.log(`✅ Sessão criada para aluno ${aluno.id}`);
-      }
-      }
-  });
-
-  return updatedSessions;
-});
+// Resolve quantos exercícios o plano tem (fonte “treino_exercicios” – estável)
+const getTotalExerciciosPlano = useCallback((alunoId: string, treinoId: string) => {
+  const aluno = alunos.find(a => a.id === alunoId);
+  const treino = aluno?.treino.find(t => t.id === treinoId);
+  return treino?.exercicios.length ?? 0;
 }, [alunos]);
+
+// Conta apenas finalizados
+const countFinalizados = (session: ActiveSession) =>
+  session.exercises?.filter(e => e.status === 'finalizado').length ?? 0;
+
+// 2) Função única de refresh, com override opcional
+const refreshRitmos = useCallback((reason: string, overrides?: Record<string, ActiveSession>) => {
+  setRitmosByAluno(prev => {
+    // GUARD: se não há sessões, mantém o estado anterior (não zera)
+    if (!activeSessions || activeSessions.length === 0) return prev;
+
+    // aplica overrides (se vieram) e calcula com a rotina PÚRA já existente
+    const base: ActiveSession[] = overrides
+      ? activeSessions.map(s => overrides[s.alunoId] ?? s)
+      : activeSessions;
+
+    const next = computeRitmos(base);
+
+    if (!shallowEqual(prev, next)) {
+      console.info('[RITMO] atualização', { reason, next });
+      return next;
+    }
+    return prev;
+  });
+}, [activeSessions, computeRitmos]);
+
+const updateRitmos = useCallback((reason: string, override?: ActiveSession[]) => {
+  if (override && override.length) {
+    const map = Object.fromEntries(override.map(s => [String(s.alunoId), s]));
+    refreshRitmos(reason, map);
+  } else {
+    refreshRitmos(reason);
+  }
+}, [refreshRitmos]);
+
+const recomputeTimeAgo = useCallback((reason: string) => {
+  setTimeAgoToDisplay(prev => {
+    const next: Record<string, string> = {};
+    for (const s of activeSessions) {
+      if (!s.startTime) continue;
+      next[String(s.alunoId)] = calculateTimeAgo(String(s.startTime));
+    }
+
+    // dedupe para evitar re-render desnecessário
+    const pk = Object.keys(prev), nk = Object.keys(next);
+    let changed = pk.length !== nk.length;
+    if (!changed) for (const k of nk) { if (prev[k] !== next[k]) { changed = true; break; } }
+
+    if (changed) {
+      console.log("[TIMEAGO] atualização", { reason, next });
+      return next;
+    } else {
+      console.log("[TIMEAGO] sem mudanças", { reason });
+      return prev;
+    }
+  });
+}, [activeSessions]);
+
+const refetchActiveSessionsDedup = async () => {
+  const rows = await fetchActiveSessions();            // já normaliza { alunoId, startTime, ... }
+  const unique = dedupSessionsByAluno(rows as ActiveSession[]);
+  setActiveSessions(unique);                           // usa o setter do seu useState
+  return unique;
+};
+
+const handleCloseHistorico = () => {
+  setHistoricoOpen(null);
+  setHistoricoRows([]);
+  setAlunoParaVerHistorico(null);
+};
+
+  /* --- EFEITOS COLATERAIS (useEffect) --- */
+
 useEffect(() => {
   console.log('ESTADO DA VIEW ATUALIZADO PARA:', view);
 }, [view]);
@@ -1034,48 +1597,6 @@ document.removeEventListener("mousedown", handleClickOutside);
 };
 
 }, []);
-useEffect(() => {
-  const rhythmInterval = setInterval(() => {
-    // A lógica agora acessa o estado DIRETAMENTE, não mais as refs.
-    if (activeSessions.length === 0) return;
-
-    const rhythmUpdates = activeSessions.map((session) => {
-      const exercisesStarted = session.exercises.filter(
-        (e) => ["executando", "finalizado"].includes(e.status)
-      ).length;
-
-      const aluno = alunos.find((a) => a.id === session.alunoId);
-      const plano = aluno?.planos.find((p) => p.id === session.planoId);
-      const totalExercises = plano ? plano.exercicios.length : 0;
-
-      const newRhythm = calculateRhythm(
-        new Date(session.startTime),
-        exercisesStarted,
-        totalExercises
-      );
-
-      return { alunoId: session.alunoId, newRhythm };
-    });
-
-    setAlunos((currentAlunos) =>
-      currentAlunos.map((aluno) => {
-        const update = rhythmUpdates.find((u) => u.alunoId === aluno.id);
-        if (
-          update &&
-          aluno.pef_responsavel_id &&
-          aluno.ritmo !== update.newRhythm
-        ) {
-          return { ...aluno, ritmo: update.newRhythm };
-        }
-        return aluno;
-      })
-    );
-  }, 1000); // Roda a cada segundo para um feedback de ritmo mais rápido
-
-  // Limpa o intervalo quando o componente é desmontado
-  return () => clearInterval(rhythmInterval);
-
-}, [alunos, activeSessions]); // <<< Array de dependências CORRETO
 useEffect(() => {
     console.log("Estado 'alunos' foi atualizado:", alunos);
 }, [alunos]);
@@ -1102,298 +1623,259 @@ useEffect(() => {
   }
 }, [user]); // Este efeito roda sempre que o 'user' mudar
 useEffect(() => {
-  const fetchAllPefs = async () => {
-    console.log("Buscando todos os perfis do Supabase...");
+  carregarDadosIniciais();
+}, [carregarDadosIniciais]); // As dependências de setters de estado podem ser removidas, pois são estáveis.
+useEffect(() => {
+  // Se não há uma sessão ativa, simplesmente limpa a lista de exercícios e encerra.
+  if (!activeSession?.treinoId) {
+    setExerciciosDoTreino([]);
+    setTreinoAtivo(null);
+    return;
+  }
 
-    // A chamada correta para buscar a lista completa, sem filtros
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*');
+  const fetchDetalhesDoTreino = async () => {
+    setWorkoutLoading(true); // 1. LIGA o estado de carregamento
 
-    if (error) {
-      console.error("Erro ao buscar a lista de PEFs:", error);
-    } else if (data) {
-      console.log("Perfis carregados do banco de dados:", data);
-      // Armazena a lista REAL no estado, substituindo a lista vazia
-      setTreinadores(data);
+    try {
+      // --- ETAPA 1: BUSCAR OS DADOS DO TREINO (NOME, ETC.) ---
+      const { data: treinoData, error: treinoError } = await supabase
+        .from('treinos')
+        .select('*')
+        .eq('id', activeSession.treinoId)
+        .single();
+
+      if (treinoError) throw treinoError;
+      setTreinoAtivo(treinoData); // <-- ARMAZENA O NOME DO TREINO NO ESTADO
+
+      // --- ETAPA 2: BUSCAR OS EXERCÍCIOS DO TREINO ---
+      const { data: exerciciosData, error: exerciciosError } = await supabase
+        .from('treino_exercicios')
+        .select(`*, exercicios ( nome )`)
+        .eq('treino_id', activeSession.treinoId)
+        .order('ordem');
+
+      if (exerciciosError) throw exerciciosError;
+
+      const dadosFormatados: ExercicioDeSessao[] = (exerciciosData ?? []).map((item: any) => ({
+        id: item.id,
+        treino_id: item.treino_id,
+        exercicio_id: item.exercicio_id,
+        ordem: item.ordem,
+        series: item.series,
+        repeticoes: item.repeticoes,
+        carga: item.carga,
+        observacoes: item.observacoes,
+        nome: item.exercicios?.nome || 'Exercício não encontrado',
+      }));
+
+      setExerciciosDoTreino(dadosFormatados); // 2. Preenche o estado com os dados
+
+    } catch (error) {
+      console.error("Erro ao buscar detalhes do treino:", error);
+      setExerciciosDoTreino([]); // Limpa a lista em caso de erro
+      setTreinoAtivo(null);
+    } finally {
+      setWorkoutLoading(false); // 3. DESLIGA o estado de carregamento (sempre, com sucesso ou erro)
     }
   };
 
-  // Só executa a busca se tivermos um usuário logado
-  if (user) {
-    fetchAllPefs();
+  fetchDetalhesDoTreino();
+}, [activeSession?.treinoId]); // A única dependência necessária é a sessão ativa
+// Bloco 2: O Cronômetro de 1s que cuida do TEMPO para a tela de treino ao vivo
+useEffect(() => {
+  if (view.type !== 'workout' || !activeSession) {
+    setTempoDeTreino("00:00:00");
+    return;
   }
-  // A dependência [user] garante que a busca aconteça assim que o usuário for definido.
-}, [user]);
+
+  const updateClock = () => {
+    const startTime = new Date(activeSession.startTime);
+    const tempoDecorrridoEmSegundos = Math.round((Date.now() - startTime.getTime()) / 1000);
+    const horas = Math.floor(tempoDecorrridoEmSegundos / 3600).toString().padStart(2, '0');
+    const minutos = Math.floor((tempoDecorrridoEmSegundos % 3600) / 60).toString().padStart(2, '0');
+    const segundos = (tempoDecorrridoEmSegundos % 60).toString().padStart(2, '0');
+    setTempoDeTreino(`${horas}:${minutos}:${segundos}`);
+  };
+
+  updateClock(); // Roda imediatamente
+  const timerId = setInterval(updateClock, 1000); // Roda a cada segundo
+  
+  return () => clearInterval(timerId);
+}, [activeSession, view.type]); // Depende da sessão e da view
+useEffect(() => {
+  // Este ticker agora roda continuamente em segundo plano,
+  // atualizando tanto o ritmo quanto o tempo "há xxx".
+  
+  // Ticker de 15 segundos para o ritmo
+  refreshRitmos('initial-load');
+  recomputeTimeAgo('initial-load');
+
+
+  // Em seguida, agendamos as atualizações contínuas (tickers).
+  const ritmoIntervalId = setInterval(() => {
+    refreshRitmos('interval/15s');
+  }, 15000);
+
+  const timeAgoIntervalId = setInterval(() => {
+    recomputeTimeAgo('interval/60s');
+  }, 60000);
+
+  // Limpa os dois intervalos quando o componente é desmontado
+  return () => {
+    clearInterval(ritmoIntervalId);
+    clearInterval(timeAgoIntervalId);
+  };
+
+}, [refreshRitmos, recomputeTimeAgo]);
+
+
+
+
+
+
 
 /* --- HANDLERS E CALLBACKS (useCallback) --- */
-const onExcluirPlano = useCallback((alunoId: number, planoId: number) => {
-  if (
-    confirm(
-      "Tem certeza que deseja excluir este plano? Esta ação não pode ser desfeita."
-    )
-  ) {
-    setAlunos((prevAlunos) =>
-      prevAlunos.map((aluno) => {
-        if (aluno.id === alunoId) {
-          return {
-            ...aluno,
-            planos: aluno.planos.filter((p) => p.id !== planoId),
-          };
+const onExcluirTreino = useCallback(async (alunoId: string, treinoId: string) => {
+    if (confirm("Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.")) {
+        try {
+            await deleteTreino(treinoId);
+            await carregarDadosIniciais();
+            alert("Treino excluído com sucesso!");
+        } catch (error) {
+            alert("Ocorreu um erro ao excluir o treino. Tente novamente.");
         }
-        return aluno;
-      })
-    );
-  }
-}, []); // <-- Array de dependências vazio
-const onEditarPlano = useCallback((planoId: number) => {
-  // Trava de segurança para garantir que temos um aluno ativo na view.
-  // A variável 'activeAluno' já existe no escopo do nosso componente 'Page'.
+    }
+}, [carregarDadosIniciais]);
+
+
+
+const onEditarTreino = useCallback(async (treinoId: string) => {
   if (!activeAluno) {
-    console.error("Erro: Tentativa de editar um plano sem um aluno ativo na visão.");
+    console.error("Erro: Nenhum aluno ativo para editar o treino.");
+    return;
+  }
+  
+  console.log("Iniciando edição de treino com ID:", treinoId);
+  try {
+    // 1. Usa o novo serviço para buscar os dados completos do treino
+    const treinoCompleto = await fetchTreinoComExercicios(treinoId);
+
+    // 2. Carrega os estados de edição com os dados vindos do backend
+    setAlunoEmEdicao(activeAluno); // Se você ainda usa este estado
+    setTreinoEmEdicao(treinoCompleto); // Carrega o treino completo no estado de edição
+
+    // 3. Navega para a tela de edição
+    setView({ type: 'editar_treino', alunoId: activeAluno.id });
+
+  } catch (error) {
+    console.error("Erro ao buscar detalhes do treino para edição:", error);
+    alert("Não foi possível carregar o treino para edição.");
+  }
+}, [activeAluno]); // Dependências
+const handleNavigateToWorkout = useCallback((alunoId: string) => {
+  // 1. A primeira coisa a fazer é verificar se JÁ EXISTE uma sessão ativa para este aluno.
+  const sessaoExistente = activeSessions.find(s => s.alunoId === alunoId);
+
+  if (sessaoExistente) { // <<< LÓGICA CORRIGIDA
+    console.log("Aluno já em treinamento. Navegando para a sessão existente.");
+    // Se já existe, vai direto para a tela de treino, passando o treinoId da sessão
+    setView({ type: "workout", alunoId: alunoId, treinoId: sessaoExistente.treinoId });
     return;
   }
 
-  const planoOriginal = activeAluno.planos.find(p => p.id === planoId);
-  if (!planoOriginal) {
-    console.error(`Erro: Plano com ID ${planoId} não encontrado para o aluno ${activeAluno.nome}.`);
-    return;
+  // 2. Se NÃO há sessão, continuamos com a lógica original para iniciar um NOVO treino.
+  const aluno = alunos.find((a) => a.id === alunoId);
+  if (!aluno) return; // Guarda de segurança caso o aluno não seja encontrado
+
+  const treinosDisponiveis = aluno.treino.filter((t) => t.status === 'ativo');
+
+  if (treinosDisponiveis.length > 0) {
+    // Se tem treinos disponíveis, vai para a tela de seleção
+    setView({ type: "select_plan", alunoId: alunoId });
+  } else {
+    // Se não tem, avisa o usuário
+    alert("Este aluno não possui um treino ativo para iniciar.");
   }
+}, [alunos, activeSessions, setView]); // <-- MUDANÇA: Adicionar 'activeSessions' e 'setView' às dependências
+const handleUpdateExerciseStatus = useCallback(
+  async (alunoId: string, exercicioId: string, newStatus: LiveExercise["status"]) => {
+    const session = activeSessions.find(s => s.alunoId === alunoId);
+    if (!session) return;
 
-  // Transforma os dados do plano para o formato que a tela de edição espera.
-  const planoEnriquecidoParaEdicao = {
-    ...planoOriginal,
-    exercicios: planoOriginal.exercicios.map(ex => {
-      const nomeExercicio = initialMockData.exercicios_biblioteca.find(libEx => libEx.id === ex.id)?.nome || 'Exercício não encontrado';
-      return {
-        ...ex,
-        nome: nomeExercicio,
-        observacoes: ex.observacoes || "",
-        isEditing: true
-      };
-    })
-  };
+    // 1) Base tipada corretamente
+    const base: LiveExercise[] = Array.isArray(session.exercises)
+      ? (session.exercises as LiveExercise[])
+      : [];
 
-  // Carrega os estados de edição com os dados já enriquecidos.
-  setAlunoEmEdicao(activeAluno);
-  setPlanoEmEdicao(planoEnriquecidoParaEdicao);
+    // 2) Atualização tipada como LiveExercise[]
+    const updated: LiveExercise[] = base.some(ex => ex.id === exercicioId)
+      ? base.map<LiveExercise>(ex =>
+          ex.id === exercicioId
+            ? { ...ex, status: newStatus }
+            : newStatus === "executando" && ex.status === "executando"
+              ? { ...ex, status: "nao-iniciado" as const }
+              : ex
+        )
+      : [...base, { id: exercicioId, status: newStatus }];
 
-  // Muda a view para a tela de edição.
-  setView({ type: "editar_plano", alunoId: activeAluno.id });
-}, [activeAluno]); // <<< Array de dependências 
-const handleUpdateStatus = useCallback(
-  (
-    event: React.MouseEvent<HTMLButtonElement> | null,
-    alunoId: number,
-    newStatus: Aluno["status"],
-    pefId: number | null = null
-  ) => {
-    setAlunos((currentAlunos) =>
-      currentAlunos.map((aluno) => {
-        if (aluno.id !== alunoId) return aluno;
-        const updatedAluno = { ...aluno };
-        if (aluno.status !== newStatus) {
-          updatedAluno.status = newStatus;
-          updatedAluno.status_timestamp = new Date().toISOString();
-        }
-        if (newStatus === "em_treinamento") {
-          updatedAluno.pef_responsavel_id = pefId;
-          if (aluno.status !== "em_treinamento") {
-            updatedAluno.ritmo = "no_ritmo";
-          }
-        } else if (newStatus === "disponivel") {
-          updatedAluno.pef_responsavel_id = null;
-          updatedAluno.ritmo = undefined;
-        }
-        return updatedAluno;
-      })
+    // 3) Persistir no DB
+    const { error } = await supabase
+      .from("sessoes_ativas")
+      .update({ exercises: updated })
+      .eq("id", session.id);
+
+    if (error) {
+      console.error(error);
+      alert("Não foi possível atualizar o exercício.");
+      return;
+    }
+
+    // 4) Espelhar na UI: array tipado como ActiveSession[]
+    const nextSessions: ActiveSession[] = activeSessions.map(s =>
+      s.id === session.id ? { ...s, exercises: updated } : s
     );
-  },
-  []
-); // <-- Array de dependências vazio
-const handleNavigateToWorkout = useCallback(
-  (alunoId: number) => {
-    console.log('Botão Iniciar Treino clicado para o aluno:', alunoId); // <-- ADICIONE ESTA LINHA
+    setActiveSessions(nextSessions);
 
-    const aluno = alunos.find((a) => a.id === alunoId)!;
-    if (aluno.status === "em_treinamento") {
-      setView({ type: "workout", alunoId: alunoId });
-      return;
-    }
-    const planosAtivos = aluno.planos.filter((p) => p.ativo);
-    if (planosAtivos.length > 0) {
-      setView({ type: "select_plan", alunoId: alunoId });
-    } else {
-      alert("Este aluno não possui sessão de treino ativa!");
-    }
+    // 5) Recalcular ritmos
+    updateRitmos("update-exercise-status", nextSessions);
   },
-  [alunos] // <-- Array de dependências com 'alunos'
+  [activeSessions, updateRitmos]
 );
-const handlePlanSelected = useCallback(
-  (alunoId: number, planoId: number) => {
-    if (!profile) {
-    console.error("Ação não permitida: usuário não está logado.");
-    return;
-  }
-    debugger;
-    const aluno = alunos.find((a) => a.id === alunoId);
-    const plano = aluno?.planos.find((p) => p.id === planoId);
-    if (!aluno || !plano) {
-      alert("Erro: Aluno ou Plano não encontrado.");
-      return;
-    }
-    const newSession: ActiveSession = {
-      alunoId,
-      planoId,
-      startTime: new Date().toISOString(),
-      exercises: plano.exercicios.map((ex) => ({
-        id: ex.id,
-        status: "nao-iniciado",
-      })),
-    };
-    setActiveSessions((prev) => [
-      ...prev.filter((s) => s.alunoId !== alunoId),
-      newSession,
-    ]);
-    handleUpdateStatus(null, alunoId, "em_treinamento", profile.id);
-    console.log('Tudo pronto! Navegando para a tela de workout para o aluno:', alunoId);
 
-    setView({ type: "workout", alunoId: alunoId });
-  },
-  [alunos, profile, handleUpdateStatus, setActiveSessions, setView]
-);
-const handleUpdateExerciseStatus = useCallback((
-  alunoId: number,
-  exerciseId: number,
-  newStatus: LiveExercise["status"]
-) => {
-  setActiveSessions((currentSessions) =>
-    currentSessions.map((session) => {
-      if (session.alunoId !== alunoId) return session;
 
-      const updatedExercises = session.exercises.map((ex) => {
-        if (ex.id === exerciseId) {
-          const updatedExercise: LiveExercise = { ...ex, status: newStatus };
-          return updatedExercise;
-        }
-        if (newStatus === "executando" && ex.status === "executando") {
-          const updatedExercise: LiveExercise = { ...ex, status: "nao-iniciado" };
-          return updatedExercise;
-        }
-        return ex;
-      });
-
-      const updatedSession: ActiveSession = {
-        ...session,
-        exercises: updatedExercises,
-      };
-      return updatedSession;
-    })
-  );
-}, []);
-const handleDeleteExerciseFromSession = useCallback((alunoId: number, exerciseId: number) => {
+const handleDeleteExerciseFromSession = useCallback((alunoId: string, exercicioId: string) => {
   // Confirmação com o usuário antes de proceder.
   if (!window.confirm("Tem certeza que deseja remover este exercício do treino de hoje?")) {
     return; // Interrompe a função se o usuário clicar em "Cancelar".
   }
 
-  setActiveSessions(currentSessions =>
-    currentSessions.map(session => {
-      // Encontra a sessão do aluno correto.
-      if (session.alunoId === alunoId) {
-        // Filtra a lista de exercícios, mantendo apenas os que NÃO têm o ID a ser removido.
-        const updatedExercises = session.exercises.filter(
-          ex => ex.id !== exerciseId
-        );
-
-        // Retorna a sessão com a lista de exercícios atualizada.
-        return { ...session, exercises: updatedExercises };
-      }
-
-      // Para todas as outras sessões, retorna sem alteração.
-      return session;
-    })
-  );
-}, []);
-const handleFinishWorkout = useCallback(
-(alunoId: number) => {
-  // 1. Encontrar a sessão ativa e os dados do aluno/plano correspondentes.
-  const sessaoFinalizada = activeSessions.find(s => s.alunoId === alunoId);
-  const alunoParaAtualizar = alunos.find(a => a.id === alunoId);
-
-  if (sessaoFinalizada && alunoParaAtualizar) {
-    const planoExecutado = alunoParaAtualizar.planos.find(p => p.id === sessaoFinalizada.planoId);
-
-    if (planoExecutado) {
-      // 2. Determinar o status do treino (completo ou incompleto).
-      const totalExercicios = planoExecutado.exercicios.length;
-      const exerciciosFeitos = sessaoFinalizada.exercises.filter(
-        (ex) => ex.status === "finalizado"
-      ).length;
-
-      // Regra: se todos os exercícios foram feitos, o treino foi completo.
-      const statusFinal = totalExercicios === exerciciosFeitos ? 'completo' : 'incompleto';
-
-      // 3. Criar o novo item para o histórico.
-      const novoHistoricoItem: HistoricoItem = {
-        id: Date.now(),
-        data: new Date().toISOString(),
-        planoId: planoExecutado.id,
-        nomePlano: planoExecutado.nome,
-        status: statusFinal,
-      };
-
-      // 4. Atualizar o estado principal de 'alunos' com o novo histórico.
-      setAlunos(alunosAtuais =>
-        alunosAtuais.map(aluno => {
-          if (aluno.id === alunoId) {
-            // Adiciona o novo item ao histórico existente (ou cria um novo array)
-            const historicoAtualizado = [...(aluno.historico || []), novoHistoricoItem];
-            return { ...aluno, historico: historicoAtualizado };
-          }
-          return aluno;
-        })
-      );
-    }
+const nextSessions = activeSessions.map(session => {
+  if (session.alunoId === alunoId) {
+    const updatedExercises = session.exercises.filter(ex => ex.id !== exercicioId);
+    return { ...session, exercises: updatedExercises };
   }
+  return session;
+});
 
-  // 5. Lógica original: limpar a sessão ativa e atualizar o status do aluno.
-  handleUpdateStatus(null, alunoId, "disponivel", null);
-  setActiveSessions((prev) => prev.filter((s) => s.alunoId !== alunoId));
-  setView({ type: "dashboard", alunoId: null });
-},
-[activeSessions, alunos, handleUpdateStatus] // <-- Atualizamos as dependências
-);
+setActiveSessions(nextSessions);
+updateRitmos('delete-exercise', nextSessions);
+
+  updateRitmos('delete-exercise');
+}, []);
 const handleBackToDashboard = useCallback(
   () => setView({ type: "dashboard", alunoId: null }),
   []
 ); // <-- Array de dependências vazio
-const handleGerenciarPlanos = useCallback((alunoId: number) => {
-  setView({ type: "gerenciar_planos", alunoId });
+const handleGerenciarTreinos = useCallback((alunoId: string) => {
+  setView({ type: "gerenciar_treinos", alunoId });
 }, []); // <-- Array de dependências
-const handleTogglePlanoAtivo = useCallback(
-  (alunoId: number, planoId: number) => {
-    setAlunos((prevAlunos) =>
-      prevAlunos.map((aluno) => {
-        if (aluno.id === alunoId) {
-          const planosAtualizados = aluno.planos.map((plano) =>
-            plano.id === planoId ? { ...plano, ativo: !plano.ativo } : plano
-          );
-          return { ...aluno, planos: planosAtualizados };
-        }
-        return aluno;
-      })
-    );
-  },
-  []
-); // <-- Array de dependências
 const handleAddExercicio = useCallback(() => {
-  // Garante que só funciona se houver um plano em edição
-  if (!planoEmEdicao) return;
+  // Garante que só funciona se houver um treino em edição
+  if (!treinoEmEdicao) return;
 
   // Cria um novo objeto de exercício com valores padrão
-  const novoExercicio: ExercicioComEdicao = {
-    id: Date.now() + 1,
+  const novoExercicio: ExercicioParaFormulario = {
+    exercicio_id: '',
     nome: "",
     series: "",
     repeticoes: "",
@@ -1403,157 +1885,312 @@ const handleAddExercicio = useCallback(() => {
   };
 
   // Atualiza o estado, adicionando o novo exercício ao final da lista existente
-  setPlanoEmEdicao((planoAtual) => ({
-    ...planoAtual!,
-    exercicios: [...planoAtual!.exercicios, novoExercicio],
-  }));
-}, [planoEmEdicao]);
+  setTreinoEmEdicao((treinoAtual) => {
+    if (!treinoAtual) return null; // Trava de segurança
+    return {
+      ...treinoAtual,
+      exercicios: [...treinoAtual.exercicios, novoExercicio],
+    };
+  });
+}, [treinoEmEdicao]);
 // Função para ABRIR o modal de edição
-const handleEditExercicio = useCallback(
-  (alunoId: number, planoId: number, exercicioId: number) => {
-    console.log(
-      `Passo 3: Função principal handleEditExercicio recebendo planoId=${planoId}, exId=${exercicioId}`
-    );
+  const handleEditExercicio = useCallback((treinoId: string, treinoExercicioId: string) => {
+    console.log(`Abrindo modal para editar o exercício ${treinoExercicioId} do treino ${treinoId}`);
 
-    const aluno = alunos.find((a) => a.id === alunoId);
-    console.log("Aluno encontrado:", aluno);
-    if (!aluno) {
-      console.error("FALHA: Aluno não encontrado com o ID:", alunoId);
+    let alunoSource: Aluno | undefined;
+    let treinoSource: Treino | undefined;
+    let treinoExercicioSource: TreinoExercicio | undefined;
+
+    alunoSource = alunos.find(a => a.treino.some(t => t.id === treinoId));
+    if (alunoSource) {
+      treinoSource = alunoSource.treino.find(t => t.id === treinoId);
+      if (treinoSource) {
+        treinoExercicioSource = treinoSource.exercicios.find(ex => ex.id === treinoExercicioId);
+      }
+    }
+
+    // CORREÇÃO: Acessando a propriedade 'exercicio' que agora existe no tipo
+    if (!alunoSource || !treinoSource || !treinoExercicioSource || !treinoExercicioSource.exercicio) {
+      console.error(`FALHA AO ABRIR MODAL: Não foi possível encontrar todos os dados para o exercício ID: ${treinoExercicioId}`);
+      alert("Ocorreu um erro ao tentar editar o exercício. Tente recarregar a página.");
       return;
     }
-    const plano = aluno.planos.find((p) => p.id === planoId);
-    if (!plano) {
-      console.error("FALHA: Plano não encontrado com o ID:", planoId);
-      return;
-    }
 
-    const exercicio = plano.exercicios.find((ex) => ex.id === exercicioId);
-    console.log("Exercício encontrado:", exercicio);
+    const exercicioParaModal: ExercicioParaModal = {
+      id: treinoExercicioSource.id,
+      exercicio_id: treinoExercicioSource.exercicio_id,
+      nome: treinoExercicioSource.exercicio.nome, // CORREÇÃO: Acessando a propriedade aninhada
+      series: treinoExercicioSource.series,
+      repeticoes: treinoExercicioSource.repeticoes,
+      carga: treinoExercicioSource.carga,
+      observacoes: treinoExercicioSource.observacoes || "",
+    };
 
-    if (exercicio) {
-      console.log("SUCESSO: Exercício encontrado! Abrindo o modal...");
-      // No nosso estado do modal, guardamos o contexto completo
-      setExercicioEmEdicao({ alunoId, planoId, exercicio }); // Coloca o exercício no estado, o que vai abrir o modal
-      console.log("Exercicio setado no estado", exercicio);
-    } else {
-      console.error("FALHA: Exercício não encontrado com o ID:", exercicioId);
-    }
-  },
-  [alunos]
-); // A dependência de 'alunos' está correta
+    setExercicioEmEdicao(exercicioParaModal);
+    setGerenciarTreinoModalOpen(true);
+
+  }, [alunos]);
 // Função para FECHAR o modal de edição
+const handleFinishWorkout = useCallback(async () => {
+  // Guardas rápidos
+  const alunoId = view.type === 'workout' ? view.alunoId : null;
+  if (!alunoId || finishingRef.current) return;
+  finishingRef.current = true;
+
+  // Snapshot mais recente da sessão do aluno
+  const latest = sessionsRef.current.find(s => s.alunoId === alunoId) ?? null;
+
+  console.info('[FINISH] iniciando', {
+    alunoId,
+    latestSessionId: latest?.id ?? '(nenhuma encontrada)',
+  });
+
+  try {
+
+if (latest?.startTime) {
+  // 1) calcula total a partir do snapshot
+let total = (latest.totalPlanejados ?? latest.exercises?.length ?? 0) || 0;
+
+// 1.1) FALLBACK: se ainda ficou 0, tenta pegar do plano de treino
+if (total === 0 && latest.treinoId) {
+  const planejados = getTotalExerciciosPlano(latest.alunoId, latest.treinoId);
+  if (typeof planejados === 'number') total = planejados;
+}
+
+  const finalizados = latest.exercises?.filter(ex => ex.status === 'finalizado').length ?? 0;
+
+  // mantém sua regra: só grava se houver total>0
+  if (total > 0) {
+    const ritmo = calcularRitmo(String(latest.startTime), finalizados, total);
+    const statusHist: 'completo' | 'incompleto' =
+      finalizados >= total ? 'completo' : 'incompleto';
+
+    // 🚩 nomes alinhados ao schema
+    const payload = {
+      aluno_id: alunoId,
+      treino_id: latest.treinoId ?? null,
+      start_time: new Date(latest.startTime).toISOString(), // ok
+      end_time: new Date().toISOString(),                   // ok
+      session_date: new Date(latest.startTime).toISOString().slice(0, 10), // 'YYYY-MM-DD'
+      total_planejados: total,
+      finalizados,
+      status: statusHist,
+      ritmo_final: ritmo,                                    // ok
+      pef_responsavel_id: profile?.id ?? null,
+    };
+
+    const { error: histErr, data: histData, status: histStatus } = await supabase
+      .from('treino_historico')
+      .upsert(payload, { onConflict: 'aluno_id,session_date' }) // 1 por dia por aluno
+      .select('id')
+      .maybeSingle();
+
+    if (histErr) {
+      console.warn('[HIST upsert] falhou', histStatus, histErr, payload);
+    } else {
+      console.info('[HIST upsert] ok', histStatus, histData);
+    }
+  } else {
+    console.info('[FINISH] histórico: ignorado (total_planejados=0)');
+  }
+} else {
+  console.info('[FINISH] histórico: ignorado (sem startTime no snapshot)');
+}// --- SEMPRE rodar o delete + atualizações de estado ---
+console.info('[FINISH] going to delete', { alunoId });
+
+const { data, error, status } = await supabase
+  .from('sessoes_ativas')
+  .delete()
+  .eq('aluno_id', alunoId)
+  .select('id')     // força retorno 0/1 linha
+  .maybeSingle();
+
+console.info('[FINISH] delete-by-aluno resp', { status, ok: !!data && !error, error, data });
+if (error) throw error;
+
+// Estado local idempotente: remove a sessão desse aluno
+const nextSessions = sessionsRef.current.filter(s => s.alunoId !== alunoId);
+setActiveSessions(nextSessions);
+
+// (opcional) limpa o ritmo do aluno no array de alunos, se você exibe isso no card
+setAlunos(prev => prev.map(a => a.id === alunoId ? { ...a, ritmo: undefined } : a));
+
+// Recalcula ritmos do dashboard já com a sessão removida
+updateRitmos('finalizar-treino', nextSessions);
+
+// Volta para o dashboard preservando o resto do ViewState
+setView(prev => ({ ...prev, type: 'dashboard' }));
+
+console.info('[FINISH] concluído com sucesso');
+}
+ catch (e: any) {
+    console.error('[FINISH] erro ao finalizar treino', {
+      msg: e?.message, code: e?.code, details: e?.details, hint: e?.hint
+    }, e);
+    alert('Não foi possível finalizar o treino. Veja o console para detalhes.');
+  } finally {
+    finishingRef.current = false;
+  }
+}, [view, supabase, setActiveSessions, setAlunos, updateRitmos, setView, profile]);
 const handleCloseEditModal = useCallback(() => {
   setExercicioEmEdicao(null); // Limpa o estado, o que vai fechar o modal
 }, []); // <-- Array de dependências com 'alunos'
 // Esta é a nova instrução de salvamento que você perguntou
-const handleSaveExercicio = useCallback(
-  (exercicioAtualizado: ExercicioComEdicao) => {
-    if (!exercicioEmEdicao) return; // Segurança
+  const handleSaveExercicio = async (exercicioAtualizado: ExercicioParaModal) => {
+    if (!exercicioAtualizado || !exercicioAtualizado.id) {
+      console.error("Tentativa de salvar um exercício inválido.");
+      return;
+    }
 
-    const { alunoId, planoId } = exercicioEmEdicao;
+    try {
+      const { error } = await supabase
+        .from('treino_exercicios')
+        .update({
+          series: exercicioAtualizado.series,
+          repeticoes: exercicioAtualizado.repeticoes,
+          carga: exercicioAtualizado.carga,
+          observacoes: exercicioAtualizado.observacoes,
+        })
+        .eq('id', exercicioAtualizado.id);
 
-    setAlunos((prevAlunos) =>
-      prevAlunos.map((aluno) => {
-        if (aluno.id === alunoId) {
-          const planosAtualizados = aluno.planos.map((plano) => {
-            if (plano.id === planoId) {
-              const exerciciosAtualizados = plano.exercicios.map((ex) =>
-                ex.id === exercicioAtualizado.id ? exercicioAtualizado : ex
-              );
-              return { ...plano, exercicios: exerciciosAtualizados };
+      if (error) throw error;
+
+      const novosAlunos = alunos.map(aluno => ({
+        ...aluno,
+        treino: aluno.treino.map(treino => ({
+          ...treino,
+          exercicios: treino.exercicios.map(ex => {
+            if (ex.id === exercicioAtualizado.id) {
+              return {
+                ...ex,
+                series: exercicioAtualizado.series,
+                repeticoes: exercicioAtualizado.repeticoes,
+                carga: exercicioAtualizado.carga,
+                observacoes: exercicioAtualizado.observacoes,
+              };
             }
-            return plano;
-          });
-          return { ...aluno, planos: planosAtualizados };
-        }
-        return aluno;
-      })
-    );
-    console.log("Salvando alterações do exercício:", exercicioAtualizado);
-    handleCloseEditModal();
-  },
-  [exercicioEmEdicao, handleCloseEditModal]
-); // <-- Array de dependências
-const handleDeleteExercicio = useCallback((
-  alunoId: number,
-  planoId: number,
-  exercicioId: number
-) => {
-  // Passo 1: Confirmar com o usuário, pois é uma ação destrutiva.
-  if (
-    !confirm(
-      "Tem certeza que deseja excluir este exercício do plano? Esta ação não pode ser desfeita."
-    )
-  ) {
-    return; // Se o usuário cancelar, a função para aqui.
-  }
+            return ex;
+          }),
+        })),
+      }));
 
-  // Passo 2: Atualizar o estado principal 'alunos'.
-  setAlunos((alunosAtuais) =>
-    alunosAtuais.map((aluno) => {
-      // Encontra o aluno correto. Se não for ele, retorna sem mudanças.
-      if (aluno.id !== alunoId) {
-        return aluno;
-      }
+      setAlunos(novosAlunos);
+      setGerenciarTreinoModalOpen(false);
+      setExercicioEmEdicao(null);
+      alert('Exercício atualizado com sucesso!');
 
-      // Se for o aluno correto, atualiza a sua lista de planos.
-      const planosAtualizados = aluno.planos.map((plano) => {
-        // Encontra o plano correto. Se não for ele, retorna sem mudanças.
-        if (plano.id !== planoId) {
-          return plano;
-        }
+    } catch (error) {
+      console.error("Erro ao salvar as alterações do exercício:", error);
+      alert("Não foi possível salvar as alterações. Verifique o console para mais detalhes.");
+    }
+  };
+// Esta função agora recebe o ÍNDICE do exercício a ser removido
+const handleDeleteExercicio = useCallback ((treinoId: string, exercicioId: string)  => {
+    // 1. Confirmação com o usuário (boa prática que você já tinha)
+    if (!confirm("Tem certeza que deseja remover este exercício do treino?")) {
+        return;
+    }
 
-        // Se for o plano correto, filtra a lista de exercícios para remover o desejado.
-        const exerciciosAtualizados = plano.exercicios.filter(
-          (ex) => ex.id !== exercicioId
+    // 2. Garante que temos um treino em edição
+    if (!treinoEmEdicao) {
+        console.error("Não há treino em edição para remover um exercício.");
+        return;
+    }
+
+    // 3. Atualiza o estado 'treinoEmEdicao', removendo o exercício pelo seu índice
+    setTreinoEmEdicao(treinoAtual => {
+        if (!treinoAtual) return null;
+
+        // Cria uma nova lista de exercícios, filtrando para remover o item no índice desejado
+        const exerciciosAtualizados = treinoAtual.exercicios.filter(
+            (ex) => ex.exercicio_id !== exercicioId);
+
+        // Retorna o novo estado do treino com a lista de exercícios atualizada
+        return {
+            ...treinoAtual,
+            exercicios: exerciciosAtualizados,
+        };
+    });
+
+}, [treinoEmEdicao]); // A única dependência necessária é o treino em edição
+// Adicione esta nova função dentro do seu componente Page
+const handleExcluirExercicioDoGerenciamento = useCallback(async (treinoId: string, exercicioId: string) => {
+    if (!confirm("Tem certeza que deseja excluir este exercício permanentemente?")) {
+        return;
+    }
+
+    try {
+        // 1. Deleta o exercício diretamente da tabela 'treino_exercicios' no Supabase
+        const { error } = await supabase
+            .from('treino_exercicios')
+            .delete()
+            .eq('id', exercicioId); // O 'exercicioId' aqui é o ID único da linha
+
+        if (error) throw error;
+
+        // 2. Atualiza o estado local 'alunos' para remover o exercício da UI instantaneamente
+        const novosAlunos = alunos.map(aluno => {
+            const treinosAtualizados = aluno.treino.map(treino => {
+                if (treino.id === treinoId) {
+                    // Se encontrarmos o treino correto, filtramos a lista de exercícios
+                    const exerciciosFiltrados = treino.exercicios.filter(ex => ex.id !== exercicioId);
+                    return { ...treino, exercicios: exerciciosFiltrados };
+                }
+                return treino;
+            });
+            return { ...aluno, treino: treinosAtualizados };
+        });
+
+        setAlunos(novosAlunos);
+        alert('Exercício excluído com sucesso!');
+
+    } catch (error) {
+        console.error("Erro ao excluir o exercício:", error);
+        alert("Não foi possível excluir o exercício. Tente novamente.");
+    }
+}, [alunos]); // Depende do estado 'alunos' para poder atualizá-lo
+// A função agora recebe o ÍNDICE do exercício a ser removido
+const handleRemoverExercicioDoFormulario = useCallback((exercicioIndex: number) => {
+    if (!treinoEmEdicao) return;
+
+    // A lógica de atualização é a mesma da função de deletar
+    setTreinoEmEdicao((treinoAtual) => {
+        if (!treinoAtual) return null;
+
+        // Cria uma nova lista de exercícios, filtrando para remover o item no índice desejado
+        const exerciciosAtualizados = treinoAtual.exercicios.filter(
+            (_, index) => index !== exercicioIndex
         );
 
-        // Retorna uma cópia do plano com a lista de exercícios atualizada.
-        return { ...plano, exercicios: exerciciosAtualizados };
-      });
-
-      // Retorna uma cópia do aluno com a lista de planos atualizada.
-      return { ...aluno, planos: planosAtualizados };
-    })
-  );
-}, []);
-const handleRemoverExercicioDoFormulario = useCallback(
-  (exercicioId: number) => {
-    if (!planoEmEdicao) return;
-
-    const exerciciosAtualizados = planoEmEdicao.exercicios.filter(
-      (ex) => ex.id !== exercicioId
-    );
-
-    setPlanoEmEdicao((planoAtual) => ({
-      ...planoAtual!,
-      exercicios: exerciciosAtualizados,
-    }));
-  },
-  [planoEmEdicao]
-);
-// Handler para os campos do próprio plano (ex: nome do plano)
-const handlePlanoInputChange = useCallback(
-  (campo: keyof Plano, valor: string) => {
-    if (!planoEmEdicao) return;
-  if (validationErrors.planoNome) {
+        // Retorna o novo estado do treino com a lista de exercícios atualizada
+        return {
+            ...treinoAtual,
+            exercicios: exerciciosAtualizados,
+        };
+    });
+}, [treinoEmEdicao]);
+// Handler para os campos do próprio treino (ex: nome do treino)
+const handleTreinoInputChange = useCallback((
+  campo: keyof Omit<TreinoParaFormulario, 'exercicios'>, valor: string) => {
+    if (!treinoEmEdicao) return;
+  if (validationErrors.treinoNome) {
     setValidationErrors(prev => {
       const newErrors = { ...prev };
-      delete newErrors.planoNome;
+      delete newErrors.treinoNome;
       return newErrors;
     });
   }
-    // Atualiza o estado do plano em edição com o novo valor do campo
-    setPlanoEmEdicao((planoAtual) => ({
-      ...planoAtual!,
+    // Atualiza o estado do treino em edição com o novo valor do campo
+    setTreinoEmEdicao((treinoAtual) => ({
+      ...treinoAtual!,
       [campo]: valor,
     }));
   },
-[planoEmEdicao, validationErrors]);
-// Handler para os campos de um exercício específico dentro do plano
+[treinoEmEdicao, validationErrors]);
+// Handler para os campos de um exercício específico dentro do treino
 const handleExercicioInputChange = useCallback(
-(exercicioIndex: number, campo: keyof ExercicioPlano, valor: string | number) => {
-    if (!planoEmEdicao) return;
+(exercicioIndex: number, campo: keyof ExercicioParaFormulario, valor: string | number) => {
+    if (!treinoEmEdicao) return;
   const errorKey = `exercicios[${exercicioIndex}].${campo}`;
   if (validationErrors[errorKey]) {
     setValidationErrors(prev => {
@@ -1563,57 +2200,51 @@ const handleExercicioInputChange = useCallback(
     });
   }
 
-  const exerciciosAtualizados = planoEmEdicao.exercicios.map((ex, index) => {
+  const exerciciosAtualizados = treinoEmEdicao.exercicios.map((ex, index) => {
     if (index === exercicioIndex) { // << Correção aplicada
       return { ...ex, [campo]: valor };
     }
     return ex;
   });
 
-  setPlanoEmEdicao((planoAtual) => ({
-    ...planoAtual!,
+  setTreinoEmEdicao((treinoAtual) => ({
+    ...treinoAtual!,
     exercicios: exerciciosAtualizados,
   }));
 },
-[planoEmEdicao, validationErrors]);
-const handleCriarNovoPlano = useCallback((aluno: Aluno) => {
-  // 1. Cria um objeto de plano 'em branco' com valores padrão.
-
-//Excluído pra garantir deploy da primeira versão no Vercel
-/*
-  const novoExercicio: ExercicioComEdicao = {
-    id: Date.now() + 1,
-    nome: "",
-    series: "",
-    repeticoes: "",
-    carga: "",
-    observacoes: "",
-    isEditing: true,
-  };*/
-  const novoPlano: Plano = {
-    id: Date.now(), // Usamos um timestamp como ID temporário
+[treinoEmEdicao, validationErrors]);
+const handleCriarNovoTreino = useCallback((aluno: Aluno) => {
+  // 1. Cria um novo objeto de treino em branco, já no formato de formulário
+  // Usando nosso tipo TreinoParaFormulario
+  const novoTreino: TreinoParaFormulario = {
+    // Campos da tabela 'treinos'
+    id: `temp-${Date.now()}`, // Usamos um ID temporário com um prefixo para clareza
+    aluno_id: aluno.id,
     nome: "", // Começa com o nome em branco
-    ativo: true,
-    exercicios: [
-      {
-        id: Date.now() + 1, // ID único temporário
-        nome: "",
-        series: "",
-        repeticoes: "",
-        carga: "",
-        observacoes: "",
-        isEditing: true, // Garante que ele já apareça como um formulário
-      },
-    ], // Começa sem exercícios
-  };
+    status: 'ativo', // Valor padrão para o novo campo 'status'
+    descricao: "",
 
-  // 2. Coloca este novo plano no estado de edição.
-  setPlanoEmEdicao(novoPlano);
+    // Array de exercícios, que é obrigatório em TreinoParaFormulario
+    exercicios: [{
+      tempId: `temp-${Date.now()}`, // Use um ID temporário e único
+      exercicio_id: '',
+      nome: "",
+      series: "",
+      repeticoes: "",
+      carga: "",
+      observacoes: "",
+    }],
+};
+
+  // 2. Coloca este novo treino no estado de edição.
+  // Agora os tipos são compatíveis.
+  setTreinoEmEdicao(novoTreino);
+  
+  // 3. Guarda o aluno em edição e navega para a tela
   setAlunoEmEdicao(aluno); // Não se esqueça de guardar o aluno também
+  setView({ type: 'editar_treino', alunoId: aluno.id });
 
-  // 3. Navega para a tela de edição.
-  setView({ type: "editar_plano", alunoId: aluno.id });
-}, []); // useCallback com dependências vazias, pois não depende de outros estados para criar um plano novo.
+}, []); // Dependências podem ser adicionadas se necessário, como setView, etc.
 const handleAlunosImported = useCallback((novosAlunos: Aluno[]) => {
 // Adiciona os novos alunos à lista existente, evitando duplicatas por ID
 setAlunos(alunosAtuais => {
@@ -1623,180 +2254,416 @@ setAlunos(alunosAtuais => {
 });
 setUploadModalOpen(false); // Fecha o modal após a importação
 }, []);
-const handleVerHistorico = useCallback((alunoId: number) => {
-  const alunoSelecionado = alunos.find(a => a.id === alunoId);
-  if (alunoSelecionado) {
-    setAlunoParaVerHistorico(alunoSelecionado);
+const handleVerHistorico = useCallback(async (alunoId: string) => {
+  // define o aluno mostrado no cabeçalho do modal
+  const alunoSelecionado = alunos.find(a => a.id === alunoId) || null;
+  setAlunoParaVerHistorico(alunoSelecionado);
+
+  // abre modal em “loading”
+  setHistoricoOpen({ alunoId, loading: true });
+
+  try {
+    const rows = await fetchHistoricoUltimos30(alunoId); // sua função já criada
+    setHistoricoRows(rows);
+  } catch (e) {
+    console.error('[Historico] erro ao carregar', e);
+    setHistoricoRows([]);
+  } finally {
+    // tira o loading, mantendo o modal aberto
+    setHistoricoOpen(prev => (prev ? { ...prev, loading: false } : prev));
   }
 }, [alunos]);
-const handleSavePlano = useCallback(() => {
-  // 1. Trava de segurança ÚNICA e eficiente.
-  // Se não houver plano ou aluno em edição, interrompe a função.
-  // Isso garante ao TypeScript que, no resto da função, eles não são nulos.
-  if (!planoEmEdicao || !alunoEmEdicao) return;
-  
-  // >>> NOVO: VALIDAÇÃO DOS DADOS <<<,,
-  const {isValid, errors} = validatePlano(planoEmEdicao);
-  setValidationErrors(errors);
-if (!isValid) {
-  // Coleta e organiza os erros para exibir no alerta
-const mensagens = Object.values(errors).map((msg) => `• ${msg}`);
-  const listaDeErros = mensagens.join('\n');
-
-  alert(`🚫 O plano contém erro(s) e não pode ser salvo:\n\n${listaDeErros}`);
-  return; // Interrompe o salvamento
-}
-  // 2. GUARDA O ID PARA NAVEGAÇÃO
-  // Fazemos isso ANTES de limpar o estado, corrigindo o bug anterior.
-  const alunoIdParaNavegar = alunoEmEdicao.id;
-
-  // 3. Lógica para diferenciar CRIAÇÃO de EDIÇÃO
-  const planoOriginal = alunoEmEdicao.planos.find(p => p.id === planoEmEdicao.id);
-  let planosAtualizadosDoAluno: Plano[];
-
-  if (planoOriginal) {
-    // Editando: substitui o plano existente
-    planosAtualizadosDoAluno = alunoEmEdicao.planos.map(p =>
-      p.id === planoEmEdicao.id ? planoEmEdicao : p
-    );
-  } else {
-    // Criando: adiciona o novo plano
-    planosAtualizadosDoAluno = [...alunoEmEdicao.planos, planoEmEdicao];
+const handleSaveTreino = useCallback(async () => {
+  // 1. Trava de segurança e Validação
+  if (!treinoEmEdicao || !activeAluno || !profile) {
+    console.error("Faltam dados essenciais para salvar: treino, aluno ou perfil.");
+    return;
   }
 
-  // 4. ATUALIZA O ESTADO PRINCIPAL
-  setAlunos(alunosAtuais =>
-    alunosAtuais.map(aluno =>
-      aluno.id === alunoEmEdicao.id
-        ? { ...aluno, planos: planosAtualizadosDoAluno }
-        : aluno
-    )
-  );
+  const { isValid, errors } = validateTreino(treinoEmEdicao);
+  setValidationErrors(errors);
 
-  // 5. LIMPA OS ESTADOS DE EDIÇÃO E NAVEGA
-  setPlanoEmEdicao(null);
-  setAlunoEmEdicao(null);
-  setView({ type: 'gerenciar_planos', alunoId: alunoIdParaNavegar });}, [planoEmEdicao, alunoEmEdicao, setValidationErrors]);
-const handleExercicioSelect = useCallback(
-  (exercicioIndex: number, suggestion: ExercicioBiblioteca) => {
-    if (!planoEmEdicao) return;
+  if (!isValid) {
+    const mensagens = Object.values(errors).map((msg) => `• ${msg}`);
+    const listaDeErros = mensagens.join('\n');
+    alert(`🚫 O treino contém erro(s) e não pode ser salvo:\n\n${listaDeErros}`);
+    return;
+  }
+  
+  // 2. Lógica de Criação ou Edição no Backend (Lógica nova)
+  try {
+    const { id, exercicios, ...dadosDoTreino } = treinoEmEdicao;
+    const pefId = profile.id;
 
-    const errorKey = `exercicios[${exercicioIndex}].nome`;
-
-    // Verifica se o exercício já foi adicionado (ignora o índice atual)
-    const isDuplicado = planoEmEdicao.exercicios.some((ex, idx) => {
-      return idx !== exercicioIndex && ex.id === suggestion.id;
-    });
-
-    if (isDuplicado) {
-      setValidationErrors((prev) => ({
-        ...prev,
-        [errorKey]: `${suggestion.nome} já está em outro card. Escolha outro exercício ou exclua o card.`,
-      }));
-      return; // Não atualiza o exercício duplicado
+    // VERIFICAMOS SE O ID É TEMPORÁRIO PARA DECIDIR SE VAMOS CRIAR OU ATUALIZAR
+    if (String(id).startsWith('temp-')) {
+      // É um novo treino: criamos um novo registro no banco de dados.
+      await createTreinoCompleto(dadosDoTreino, exercicios, pefId);
+      alert('Treino criado com sucesso!');
+      await carregarDadosIniciais();
+    } else {
+      // É um treino existente: atualizamos o registro no banco de dados.
+      // Você precisará criar a função updateTreinoCompleto no seu serviço.
+      await updateTreinoCompleto(id, dadosDoTreino, exercicios, pefId);
+      alert('Treino atualizado com sucesso!');
+      await carregarDadosIniciais();
     }
 
-    // Se não for duplicado, remove erro (caso exista) e atualiza
-    if (validationErrors[errorKey]) {
-      setValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[errorKey];
-        return newErrors;
-      });
-    }
+    // 3. Limpeza de Estado e Navegação
+    const alunoIdParaNavegar = activeAluno.id;
+    setTreinoEmEdicao(null);
+    setAlunoEmEdicao(null);
+    setView({ type: 'gerenciar_treinos', alunoId: alunoIdParaNavegar });
+  } catch (error) {
+    alert('Ocorreu um erro ao salvar o treino no banco de dados. Tente novamente.');
+    console.error(error);
+  }
+  
+}, [treinoEmEdicao, activeAluno, profile, setValidationErrors]);
+const handleExercicioSelect = useCallback((exercicioIndex: number, suggestion: Exercicio) => { // TIPO CORRIGIDO AQUI
+  if (!treinoEmEdicao) return;
 
-    const exerciciosAtualizados = planoEmEdicao.exercicios.map((ex, index) => {
-      if (index === exercicioIndex) {
-        return {
-          ...ex,
-          nome: suggestion.nome,
-          id: suggestion.id,
-        };
-      }
-      return ex;
-    });
+  const errorKey = `exercicios[${exercicioIndex}].nome`;
 
-    setPlanoEmEdicao((planoAtual) => ({
-      ...planoAtual!,
-      exercicios: exerciciosAtualizados,
+  // Verifica se o exercício já foi adicionado (ignora o índice atual)
+  const isDuplicado = treinoEmEdicao.exercicios.some((ex, idx) => {
+    // CORREÇÃO: Compara ex.exercicio_id com suggestion.id
+    return idx !== exercicioIndex && ex.exercicio_id === suggestion.id;
+  });
+
+  if (isDuplicado) {
+    setValidationErrors((prev) => ({
+      ...prev,
+      [errorKey]: `${suggestion.nome} já está em outro card. Escolha outro exercício ou exclua o card.`,
     }));
-  },
-  [planoEmEdicao, validationErrors]
-);
+    return; // Não atualiza o exercício duplicado
+  }
+
+  // Se não for duplicado, remove o erro (caso exista) e atualiza
+  if (validationErrors[errorKey]) {
+    setValidationErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[errorKey];
+      return newErrors;
+    });
+  }
+
+  // Atualiza o exercício no estado treinoEmEdicao com os dados da sugestão selecionada
+  const exerciciosAtualizados = treinoEmEdicao.exercicios.map((ex, index) => {
+    if (index === exercicioIndex) {
+      return {
+        ...ex,
+        exercicio_id: suggestion.id, // Guarda o ID do exercício selecionado
+        nome: suggestion.nome,       // Atualiza o nome no formulário
+      };
+    }
+    return ex;
+  });
+
+  setTreinoEmEdicao(prevTreino => {
+      if (!prevTreino) return null;
+      return {
+          ...prevTreino,
+          exercicios: exerciciosAtualizados
+      }
+  });
+
+}, [treinoEmEdicao, validationErrors]);
 const handleOpenEditPefModal = useCallback((pef: PEF) => {
   setPefEmEdicao(pef);
 }, []);
-const handleUpdatePef = useCallback((pefAtualizado: PEF) => {
-  setTreinadores(treinadoresAtuais =>
-    treinadoresAtuais.map(p => (p.id === pefAtualizado.id ? pefAtualizado : p))
-  );
-  setPefEmEdicao(null); // Fecha o modal
-}, []);
-const handleTogglePefStatus = useCallback((pefId: number) => {
-  setTreinadores(treinadoresAtuais =>
-    treinadoresAtuais.map(pef => {
-      if (pef.id === pefId) {
-        // Se encontrarmos o PEF, invertemos seu status
-        const novoStatus = pef.status === 'ativo' ? 'inativo' : 'ativo';
-        return { ...pef, status: novoStatus };
-      }
-      return pef;
-    })
-  );
-}, []);
-const handleResetPassword = useCallback((pefNome: string) => {
-  // 1. Confirmação robusta com o usuário (UX - Prevenção de Erros [Nielsen #5])
-  const confirmacao = window.confirm(
-    `A senha atual de '${pefNome}' será invalidada permanentemente. Deseja gerar uma nova senha?`
-  );
+const handleUpdatePef = useCallback(async (pefAtualizado: PEF) => {
+  try {
+    // 1. Envia a atualização para a tabela 'profiles' no Supabase
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        nome: pefAtualizado.nome,
+        cpf: pefAtualizado.cpf,
+        cref: pefAtualizado.cref,
+        is_estagiario: pefAtualizado.is_estagiario
+        // O e-mail não é atualizado aqui, pois geralmente é fixo
+      })
+      .eq('id', pefAtualizado.id);
 
-  if (confirmacao) {
-    // 2. Geração de uma senha aleatória simples (em um caso real, usaríamos uma biblioteca de criptografia)
-    const novaSenha = Math.random().toString(36).slice(-8);
+    if (error) {
+      throw error; // Lança o erro se a atualização no banco falhar
+    }
 
-    // 3. Exibição da nova senha e instrução para o admin (UX - Visibilidade do Status do Sistema [Nielsen #1])
-    alert(
-      `Nova senha para '${pefNome}':\n\n${novaSenha}\n\nCopie esta senha e envie para o usuário.`
+    // 2. Se o salvamento no banco for bem-sucedido, atualiza o estado local
+    setTreinadores(treinadoresAtuais =>
+      treinadoresAtuais.map(p => (p.id === pefAtualizado.id ? pefAtualizado : p))
     );
-    // Em um sistema real, essa lógica enviaria a nova senha por e-mail e invalidaria a antiga no banco de dados.
-    // Como estamos apenas com dados mockados, o alert simula a conclusão do fluxo.
-  }
-},[]);
-const handlePefSubmit = useCallback(async (novoPef: NovoPefData) => {
-    // Idealmente, adicione um estado de 'isSubmitting' para dar feedback ao usuário
     
-    try {
-        const response = await fetch('/api/invite', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(novoPef), // Envia todos os dados do formulário
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            // Lança um erro se a API retornar um status de erro
-            throw new Error(result.error || 'Falha ao convidar profissional.');
-        }
-        
-        alert(`Sucesso! ${result.message}`);
-        setAddPefModalOpen(false);
-        
-        // Para uma melhor UX, aqui você deve recarregar a lista de profissionais
-        // para que o novo apareça na tela sem precisar recarregar a página.
-        // Ex: fetchAllPefs(); 
+    setPefEmEdicao(null); // Fecha o modal
+    alert('Perfil atualizado com sucesso!');
 
   } catch (error) {
-    console.error("Erro no processo de convite:", error);
-    if (error instanceof Error) {
+    console.error("Erro ao atualizar o perfil do PEF:", error);
+    alert("Não foi possível salvar as alterações no perfil.");
+  }
+}, []);
+const handleTogglePefStatus = useCallback(async (pefId: string, statusAtual: 'ativo' | 'inativo') => {
+  // 1. Determina o novo status
+  const novoStatus = statusAtual === 'ativo' ? 'inativo' : 'ativo';
+
+  try {
+    // 2. Envia a atualização para o banco de dados Supabase
+    const { error } = await supabase
+      .from('profiles')
+      .update({ status: novoStatus }) // Atualiza a coluna 'status'
+      .eq('id', pefId);              // Para o PEF com o ID correspondente
+
+    if (error) {
+      throw error; // Lança o erro se a atualização falhar
+    }
+
+    // 3. Se a atualização no banco for bem-sucedida, atualiza o estado local
+    setTreinadores(treinadoresAtuais =>
+      treinadoresAtuais.map(pef => {
+        if (pef.id === pefId) {
+          return { ...pef, status: novoStatus };
+        }
+        return pef;
+      })
+    );
+
+  } catch (error) {
+    console.error("Erro ao alterar o status do PEF:", error);
+    alert("Não foi possível alterar o status do profissional.");
+  }
+}, []);
+const handleResetPassword = useCallback(async (pef: PEF) => {
+  if (window.confirm(`Deseja enviar um link de recuperação de senha para o e-mail de '${pef.nome}'?`)) {
+    try {
+      const response = await fetch('/api/admin-reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: pef.id }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Falha ao enviar o link.');
+      }
+
+      alert(result.message);
+
+    } catch (error: any) {
+      console.error("Erro ao resetar senha:", error);
       alert(`Erro: ${error.message}`);
-    } else {
-      alert('Ocorreu um erro desconhecido durante o convite.');
     }
   }
-}, [setAddPefModalOpen]);
+},[]);
+const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<any | null> => {
+  try {
+    const response = await fetch('/api/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(novoPef),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw result; // Lança o corpo do erro (que pode ser { errors: [...] } ou { error: '...' })
+    }
+
+    alert(`Sucesso! ${result.message}`);
+    setAddPefModalOpen(false);
+    fetchAllPefs();
+    return null;
+
+  } catch (error: any) {
+    console.error("Erro capturado para repassar ao modal:", error);
+    return error; // Simplesmente repassa o erro capturado, intacto.
+  }
+}, [fetchAllPefs, setAddPefModalOpen]);
+const handleIniciarSessaoDeTreino = useCallback(
+  async (alunoId: string, treinoId?: string) => {
+    if (!alunoId) {
+      alert("Aluno inválido.");
+      return;
+    }
+
+    // TRAVA contra clique duplo / StrictMode
+    if (iniciandoSessaoRef.current === alunoId) return;
+    iniciandoSessaoRef.current = alunoId;
+
+    try {
+      // 1) Verifica se já existe sessão ativa no DB
+      const { data: existente, error: errCheck } = await supabase
+        .from('sessoes_ativas')
+        .select('*')
+        .eq('aluno_id', alunoId)
+        .maybeSingle();
+
+      if (errCheck) {
+        console.error("Erro ao checar sessão ativa:", errCheck);
+      }
+
+if (existente) {
+  // 1) Troca de view imediata (navegação otimista)
+setView((prev: ViewState) => ({
+  ...prev,
+  type: 'workout',
+  alunoId,
+  treinoId: existente.treino_id ?? null,
+}));
+
+// monta uma sessão local mínima só para o cálculo do ritmo
+const sessLocal: ActiveSession = {
+  id: existente.id,
+  alunoId,                                 // já está no escopo da função
+  treinoId: existente.treino_id ?? null,
+  startTime: existente.start_time ?? new Date().toISOString(),
+  exercises: [],                            // deixa 0 finalizados; total virá do plano
+  pef_responsavel_id: existente.pef_responsavel_id ?? null
+};
+refreshRitmos('start-session/existente', { [alunoId]: sessLocal });
+void refetchActiveSessionsDedup();        // atualiza do DB em background
+return;
+
+}
+
+      // 2) Não existe -> criar uma nova
+        const payload = {
+          aluno_id: alunoId,
+          treino_id: treinoId ?? null,
+          start_time: new Date().toISOString(),
+          pef_responsavel_id: profile?.id ?? null, // se quiser gravar quem iniciou
+          exercises: [],                            // opcional; default já é []
+        };
+
+      // upsert ajuda se existir índice único em aluno_id; se não existir, ainda estamos protegidos pela checagem acima
+      const { data: inserida, error: errInsert } = await supabase
+        .from('sessoes_ativas')
+        .upsert(payload, { onConflict: 'aluno_id' })
+        .select('*')
+        .single();
+
+      if (errInsert) {
+        console.error("Erro ao iniciar sessão:", errInsert);
+        alert("Não foi possível iniciar o treino.");
+        return;
+      }
+
+      // 3) Recarrega do DB para manter estado ≡ DB (sem empurrar manualmente)
+      // 3) Navegação otimista: troca a tela já
+setView((prev: ViewState) => ({
+  ...prev,
+  type: 'workout',
+  alunoId,
+  treinoId: inserida.treino_id ?? treinoId ?? null,
+}));
+
+const sessLocal: ActiveSession = {
+  id: inserida.id,
+  alunoId: String(alunoId),
+  treinoId: inserida.treino_id ?? treinoId ?? null,
+  pef_responsavel_id: inserida.pef_responsavel_id ?? profile?.id ?? null,
+  startTime: inserida.start_time ?? new Date().toISOString(),
+  exercises: Array.isArray(inserida.exercises) ? inserida.exercises : [],
+  totalPlanejados: getTotalExerciciosPlano(
+    alunoId,
+    inserida.treino_id ?? treinoId ?? null
+  ) ?? undefined,
+};
+
+// Atualiza o mapa de ritmos sem depender do refetch
+refreshRitmos('start-session/inserida', { [alunoId]: sessLocal });
+
+// Atualiza as sessões do DB em background (não bloqueia a navegação)
+void refetchActiveSessionsDedup();
+
+return; // evita executar qualquer coisa depois daqui
+
+      
+    } finally {
+      iniciandoSessaoRef.current = null;
+    }
+  },
+  [alunos, router, refreshRitmos, profile]);
+const handleAssumirTreino = useCallback(async (sessionId: string) => {
+  // Garante que temos o perfil do usuário logado
+  if (!profile) return;
+
+  try {
+    // 1. Atualiza a linha correspondente na tabela sessoes_ativas do Supabase
+    const { error } = await supabase
+      .from('sessoes_ativas')
+      .update({ pef_responsavel_id: profile.id }) // Define o novo PEF
+      .eq('id', sessionId); // Para a sessão com o ID específico
+
+    if (error) {
+      throw error;
+    }
+
+    // 2. Atualiza o nosso estado local para refletir a mudança instantaneamente na UI
+    setActiveSessions(currentSessions =>
+      currentSessions.map(session =>
+        session.id === sessionId
+          ? { ...session, pef_responsavel_id: profile.id }
+          : session
+      )
+    );
+
+  } catch (error) {
+    console.error("Erro ao assumir o treino:", error);
+    alert("Não foi possível assumir o treino. Tente novamente.");
+  }
+}, [profile, setActiveSessions]); // Adicione setActiveSessions às dependências
+const handleToggleTreinoStatus = useCallback(async (treinoId: string) => {
+  // 1. Encontra o treino específico dentro do estado 'alunos'
+  let treinoAtual;
+  let alunoId: string | undefined;
+
+  for (const aluno of alunos) {
+    const treinoEncontrado = aluno.treino.find(t => t.id === treinoId);
+    if (treinoEncontrado) {
+      treinoAtual = treinoEncontrado;
+      alunoId = aluno.id;
+      break;
+    }
+  }
+
+  if (!treinoAtual) {
+    console.error("Treino não encontrado para alterar o status.");
+    return;
+  }
+
+  // 2. Determina o novo status
+  const novoStatus: 'ativo' | 'inativo' = treinoAtual.status === 'ativo' ? 'inativo' : 'ativo';
+
+  try {
+    // 3. Atualiza o status no Supabase
+    const { error } = await supabase
+      .from('treinos')
+      .update({ status: novoStatus })
+      .eq('id', treinoId);
+
+    if (error) throw error;
+
+    // 4. Atualiza o estado local para a UI refletir a mudança instantaneamente
+    const novosAlunos = alunos.map(aluno => {
+      if (aluno.id === alunoId) {
+        return {
+          ...aluno,
+          treino: aluno.treino.map(t =>
+            t.id === treinoId ? { ...t, status: novoStatus } : t
+          ),
+        };
+      }
+      return aluno;
+    });
+    setAlunos(novosAlunos);
+
+  } catch (error) {
+    console.error("Erro ao alterar o status do treino:", error);
+    alert("Não foi possível alterar o status do treino.");
+  }
+}, [alunos]); // A função depende do estado 'alunos'
 
   // 3. Adicione a lógica de proteção de rota
   useEffect(() => {
@@ -1807,92 +2674,133 @@ const handlePefSubmit = useCallback(async (novoPef: NovoPefData) => {
     }
   }, [user, loading, router]); // O efeito roda sempre que esses valores mudarem
 
-  // 4. Adicione uma tela de carregamento enquanto a sessão é verificada
-  if (loading) {
-    return <div>Carregando...</div>; // Ou um componente de Spinner mais elegante
-  }
+
 
   // 5. Garanta que a página só seja renderizada para usuários logados
   if (!user) {
-    // Pode parecer redundante, mas garante que nada seja renderizado
-    // antes do redirecionamento do useEffect acontecer.
+    // Pode parecer redundante, mas garante que nada seja renderizado antes do redirecionamento do useEffect acontecer.
     return null;
   }  
+console.log("RITMOS ATUALIZADOS:", ritmosByAluno);
+
+
 
    /* ---LÓGICA DE RENDERIZAÇÃO (Estados Derivados)--- */
 const filteredAlunos = alunos.filter((aluno) => {
-    const statusMatch =
-      statusFilter === "todos" ||
-      (statusFilter === "meus_alunos" &&
-        aluno.pef_responsavel_id === profile?.id) ||
-      aluno.status === statusFilter;
-    const nameMatch =
-      nameFilter === "" ||
-      aluno.nome.toLowerCase().includes(nameFilter.toLowerCase());
-    return statusMatch && nameMatch;
-});
-  let pageContent;
+  // 1. Primeiro, determinamos o status REAL do aluno (a sessão ativa tem prioridade)
+  const sessaoAtiva = activeSessions.find(s => s.alunoId === aluno.id);
+  const statusReal = sessaoAtiva ? 'em_treinamento' : 'disponivel';
 
+  // 2. Agora, aplicamos a lógica de filtro de status baseada na sua nova regra
+  let statusMatch = false;
+  if (statusFilter === 'todos') {
+    statusMatch = true;
+  } else if (statusFilter === 'meus_alunos') {
+    // "Meus alunos" SÃO aqueles com uma sessão ativa onde o PEF responsável sou EU.
+    // Usamos '?' (optional chaining) para segurança, caso profile.id não exista.
+    statusMatch = sessaoAtiva?.pef_responsavel_id === profile?.id;
+  } else {
+    // Para outros filtros (ex: "em_treinamento", "ativo"), usamos o status real que calculamos.
+    statusMatch = statusReal === statusFilter;
+  }
+const nameMatch =
+  nameFilter === "" ||
+  normalizeString(aluno.nome).includes(normalizeString(nameFilter));
+
+    return statusMatch && nameMatch;
+})
+  .sort((a, b) => {
+    const ritmoA = ritmosByAluno[a.id];
+    const ritmoB = ritmosByAluno[b.id];
+    const sessionA = activeSessions.find(s => s.alunoId === a.id);
+    const sessionB = activeSessions.find(s => s.alunoId === b.id);
+
+    // REGRA 1: Prioridade máxima para quem está "Atrasado".
+    if (ritmoA === 'atrasado' && ritmoB !== 'atrasado') return -1; // 'a' vem primeiro
+    if (ritmoA !== 'atrasado' && ritmoB === 'atrasado') return 1;  // 'b' vem primeiro
+
+    // Se ambos estão atrasados ou nenhum está, passamos para a próxima regra.
+
+    // REGRA GERAL: Alunos em treinamento sempre vêm antes dos disponíveis.
+    if (sessionA && !sessionB) return -1;
+    if (!sessionA && sessionB) return 1;
+
+    // REGRA 2: Se ambos estão treinando (mas não atrasados), ordena pelo mais antigo (FIFO).
+    if (sessionA && sessionB) {
+      const timeA = new Date(sessionA.startTime).getTime();
+      const timeB = new Date(sessionB.startTime).getTime();
+      return timeA - timeB; // Ordena pelo menor timestamp (o que começou antes)
+    }
+
+    // REGRA 3: Se nenhum está treinando, ou em qualquer outro caso, ordena por nome.
+    return a.nome.localeCompare(b.nome);
+  });
+// --- FIM DO BLOCO DE ORDENAÇÃO ---
+  let pageContent;
+  if (perfisCarregando || loading) {
+    return <LoadingSpinner message="Carregando dados do GymPro..." />;
+  }
+
+  // 5. Garanta que a página só seja renderizada para usuários logados
+  if (!user || !profile) {
+    // O seu useEffect de redirecionamento já cuida disso.
+    // Retornar null aqui mostra uma tela em branco enquanto redireciona.
+    return null;
+  } else {
+  // Se não estiver carregando, então montamos o conteúdo normal da página
   switch (view.type) {
-    case "gerenciar_planos":
-      pageContent = activeAluno ? (
-        <GerenciarPlanosPage
+    case "gerenciar_treinos":
+      pageContent  = activeAluno ? (
+        <GerenciarTreinosPage
           aluno={activeAluno}
-          activeSession={activeSession} // LINHA ADICIONADA
+          activeSession={activeSessions.find(s => s.alunoId === activeAluno.id) || null}
+          onExcluirTreino={(treinoId: string) => onExcluirTreino(activeAluno.id, treinoId)} // Garante que treinoId é string
+          onIniciarTreino={(treinoId: string) => handleIniciarSessaoDeTreino(activeAluno.id, treinoId)}
+          onEditarTreino={onEditarTreino} // onEditarTreino já espera string
+          onEditarExercicio={(treinoId: string, exercicioId: string) => handleEditExercicio(treinoId, exercicioId)}
+          onExcluirExercicio={handleExcluirExercicioDoGerenciamento}
+          onCriarTreino={() => handleCriarNovoTreino(activeAluno)}
           onBack={handleBackToDashboard}
-          onTogglePlanoAtivo={(planoId) =>
-            handleTogglePlanoAtivo(activeAluno.id, planoId)
-          }
-          onExcluirPlano={(planoId) => onExcluirPlano(activeAluno.id, planoId)}
-          onIniciarTreino={(planoId) =>
-            handlePlanSelected(activeAluno.id, planoId)
-          }
-          onEditarPlano={onEditarPlano}
-          onEditarExercicio={(planoId, exId) =>
-            handleEditExercicio(activeAluno.id, planoId, exId)
-          }
-          onExcluirExercicio={(planoId, exId) =>
-            handleDeleteExercicio(activeAluno.id, planoId, exId)
-          }
-          onCriarPlano={() => handleCriarNovoPlano(activeAluno)} // AGORA CHAMA A FUNÇÃO NOVA E PASSA O ALUNO
+          onToggleTreinoStatus={handleToggleTreinoStatus}
         />
       ) : null;
       break;
-    case "editar_plano":
-      pageContent =
-        activeAluno && planoEmEdicao ? (
-          <PlanoEditView
-            aluno={activeAluno}
-            plano={planoEmEdicao} // Passa o plano que está sendo editado
-            onPlanoChange={handlePlanoInputChange} // Passa o handler do nome do plano
-            onExercicioChange={handleExercicioInputChange} // Passa o handler dos exercícios
-            onExercicioSelect={handleExercicioSelect} // <<< CONECTANDO O HANDLER PRINCIPAL
-            onAddExercicio={handleAddExercicio}
-            onDeleteExercicio={handleRemoverExercicioDoFormulario}
-            onBack={() =>
-              setView({ type: "gerenciar_planos", alunoId: activeAluno.id })
-            }
-            onSave={handleSavePlano}
-            validationErrors={validationErrors}
-            setValidationErrors={setValidationErrors}
-          />
-        ) : null;
+    case "editar_treino":
+      pageContent = activeAluno && treinoEmEdicao ? (
+        <TreinoEditView
+          aluno={activeAluno}
+          treino={treinoEmEdicao}
+          onTreinoChange={handleTreinoInputChange}
+          onExercicioChange={handleExercicioInputChange}
+          onExercicioSelect={handleExercicioSelect}
+          onBack={() => setView({ type: 'gerenciar_treinos', alunoId: activeAluno.id })}
+          onSave={handleSaveTreino}
+          onAddExercicio={handleAddExercicio}
+          onExcluirExercicio={(exercicioId) => {handleDeleteExercicio(treinoEmEdicao.id, exercicioId)}}
+          validationErrors={validationErrors}
+          setValidationErrors={setValidationErrors}
+        />
+      ) : null;
       break;
     case "workout":
+      console.log("Dados enviados para LiveWorkoutView:", { exercicios: exerciciosDoTreino });
       pageContent =
         activeAluno && activeSession ? (
           <LiveWorkoutView
             session={activeSession!}
             aluno={activeAluno}
-            timeInTraining={activeTrainingTime}
+            timeInTraining={tempoDeTreino}
+            ritmo={activeAluno ? ritmosByAluno[activeAluno.id] : 'no_ritmo'}
             onBack={handleBackToDashboard}
             onFinishWorkout={handleFinishWorkout}
-            onUpdateExercise={(exerciseId, status) =>
-              handleUpdateExerciseStatus(activeAluno.id, exerciseId, status)
-            }
+            onUpdateExercise={(exercicioId, status) => handleUpdateExerciseStatus(activeAluno.id, exercicioId, status)}
             onEditarExercicio={handleEditExercicio}
-            onDeleteExercise={(exerciseId) => 
-          handleDeleteExerciseFromSession(activeAluno.id, exerciseId)}
+            onExcluirExercicio={(exercicioId) => handleDeleteExerciseFromSession(activeAluno.id, exercicioId)}
+            exerciciosDoTreino={exerciciosDoTreino}
+            treinoAtivo={treinoAtivo}
+            setExerciciosDoTreino={setExerciciosDoTreino}
+            exerciciosParaRenderizar={exerciciosParaRenderizar}
+            isWorkoutLoading={isWorkoutLoading}
 
           />
         ) : null;
@@ -1901,166 +2809,175 @@ const filteredAlunos = alunos.filter((aluno) => {
       pageContent = activeAluno ? (
         <SelectPlanView
           aluno={activeAluno}
-         onSelectPlan={(event) => {
-    const planoId = Number(event.currentTarget.value);
-    handlePlanSelected(activeAluno.id, planoId);
-}}
+          onSelectPlan={(event) => {
+    const treinoId = event.currentTarget.value;
+    handleIniciarSessaoDeTreino(activeAluno.id, treinoId);
+    }}
           onCancel={handleBackToDashboard}
         />
       ) : null;
       break;
     case "dashboard":
     default:
-      if (!profile) {
-        return <div>Carregando perfil do usuário...</div>; // Ou um spinner
-    }
-      pageContent = (
-        <div className="container">
-          <div id="dashboard-view">
-            <header>
-              <h1 className="title-app">GymPro</h1>
-  
-  {/* Container para o menu e as informações do PEF */}
-  <div style={{ position: 'relative' }} ref={headerMenuRef}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-      <div id="pef-info">
-        <span>{profile.nome}</span> <br />
-        <small>
-          {profile.is_estagiario ? "Estagiário" : `CREF: ${profile.cref}`}
-        </small>
-      </div>
+          if (!profile) {
+            return <div>Carregando perfil do usuário...</div>; // Ou um spinner
+        }
+          pageContent = (
+            <div className="container">
+              <div id="dashboard-view">
+                <header>
+                  <h1 className="title-app">GymPro</h1>
       
-      {/* Botão de 3 pontos que abre o menu */}
-      <button className="options-icon" onClick={() => setHeaderMenuOpen(!isHeaderMenuOpen)}>
-        {optionsIcon}
-      </button>
-    </div>
+                  {/* Container para o menu e as informações do PEF */}
+                  <div style={{ position: 'relative' }} ref={headerMenuRef}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+                      <div id="pef-info">
+                        <span>{profile.nome}</span> <br />
+                        <small>
+                          {profile.is_estagiario ? "Estagiário" : `CREF: ${profile.cref}`}
+                        </small>
+                      </div>
+                      
+                      {/* Botão de 3 pontos que abre o menu */}
+                      <button className="options-icon" onClick={() => setHeaderMenuOpen(!isHeaderMenuOpen)}>
+                        {optionsIcon}
+                      </button>
+                    </div>
 
-    {/* O menu dropdown, que só aparece se 'isHeaderMenuOpen' for true */}
-    {isHeaderMenuOpen && (
-      <div className="options-menu">
-      <button
-          className="menu-item"
-          onClick={() => {
-            setUploadModalOpen(true); // Abre o modal
-            setHeaderMenuOpen(false); // Fecha o menu
-          }}
-        >
-          {/* Opcional: Adicionar um ícone de upload aqui */}
-          Incluir Aluno via CSV
-      </button>
-            {profile.roles.includes('admin') && (
-      <button
-        className="menu-item"
-        onClick={() => {
-          setView({ type: 'gerenciar_perfis', alunoId: null });
-          setHeaderMenuOpen(false);
-        }}
-      >
-        Gerenciar Perfis
-      </button>
-    )}
-      <button
-        className="menu-item"
-        onClick={signOut} // Chama a função do nosso contexto
-        >
-        Sair
-      </button>
-      </div>
-    )}
-  </div>
-</header>
-            <main>
-              <div className="controls">
-                <div className="filters">
-                  <button
-                    className={`btn btn-sm filter-btn ${
-                      statusFilter === "todos" ? "active" : ""
-                    }`}
-                    onClick={() => setStatusFilter("todos")}
-                  >
-                    Todos
-                  </button>
-                  <button
-                    className={`btn btn-sm filter-btn ${
-                      statusFilter === "disponivel" ? "active" : ""
-                    }`}
-                    onClick={() => setStatusFilter("disponivel")}
-                  >
-                    Disponíveis
-                  </button>
-                  <button
-                    className={`btn btn-sm filter-btn ${
-                      statusFilter === "aguardando" ? "active" : ""
-                    }`}
-                    onClick={() => setStatusFilter("aguardando")}
-                  >
-                    Aguardando
-                  </button>
-                  <button
-                    className={`btn btn-sm filter-btn ${
-                      statusFilter === "em_treinamento" ? "active" : ""
-                    }`}
-                    onClick={() => setStatusFilter("em_treinamento")}
-                  >
-                    Em Treinamento
-                  </button>
-                  <button
-                    className={`btn btn-sm filter-btn ${
-                      statusFilter === "meus_alunos" ? "active" : ""
-                    }`}
-                    onClick={() => setStatusFilter("meus_alunos")}
-                  >
-                    Meus Alunos
-                  </button>
-                </div>
-                <div className="search-wrapper">
-                  <input
-                    type="text"
-                    id="name-filter"
-                    placeholder="Filtrar por nome..."
-                    value={nameFilter}
-                    onChange={(e) => setNameFilter(e.target.value)}
-                  />
-                  {nameFilter && (
-                    <button
-                      className="clear-btn"
-                      onClick={() => setNameFilter("")}
-                    >
-                      &times;
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div id="aluno-list-container">
-                <div className="aluno-list">
-                  {filteredAlunos.length > 0 ? (
-                    filteredAlunos.map((aluno) => (
-                      <AlunoCard
-                        key={aluno.id}
-                        aluno={aluno}
-                        timeInStatus={timeAgoToDisplay[aluno.id] || ''}
-                        treinadores={treinadores}
-                        profile={profile}
-                        isMenuOpen={openAlunoMenuId === aluno.id} // <<< CONECTADO
-                        onToggleMenu={() => setOpenAlunoMenuId(prevId => prevId === aluno.id ? null : aluno.id)} // <<< CONECTADO
-                        onNavigateToWorkout={handleNavigateToWorkout}
-                        onUpdateStatus={handleUpdateStatus}
-                        onGerenciarPlanos={handleGerenciarPlanos}
-                        onVerHistorico={handleVerHistorico} 
-                      />
-                    ))
+                    {/* O menu dropdown, que só aparece se 'isHeaderMenuOpen' for true */}
+                    {isHeaderMenuOpen && (
+                      <div className="options-menu">
+                      <button
+                          className="menu-item"
+                          onClick={() => {
+                            setUploadModalOpen(true); // Abre o modal
+                            setHeaderMenuOpen(false); // Fecha o menu
+                          }}
+                        >
+                          {/* Opcional: Adicionar um ícone de upload aqui */}
+                          Incluir Aluno via CSV
+                      </button>
+                            {profile.roles.includes('admin') && (
+                      <button
+                        className="menu-item"
+                        onClick={() => {
+                          setView({ type: 'gerenciar_perfis', alunoId: null });
+                          setHeaderMenuOpen(false);
+                        }}
+                      >
+                        Gerenciar Perfis
+                      </button>
+                    )}
+                      <button
+                        className="menu-item"
+                        onClick={signOut} // Chama a função do nosso contexto
+                        >
+                        Sair
+                      </button>
+                      </div>
+                    )}
+                  </div>
+                </header>
+                <main>
+                  {/* TRAVA DE CARREGAMENTO ADICIONADA AQUI */}
+                  {perfisCarregando ? (
+                    <div style={{ textAlign: 'center', padding: '2rem' }}>Carregando dados...</div> // Ou um componente de Spinner
                   ) : (
-                    <div className="nenhum-aluno">Nenhum aluno encontrado.</div>
-                  )}
-                </div>
+                    <>
+                  <div className="controls">
+                    <div className="filters">
+                      <button
+                        className={`btn btn-sm filter-btn ${
+                          statusFilter === "todos" ? "active" : ""
+                        }`}
+                        onClick={() => setStatusFilter("todos")}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        className={`btn btn-sm filter-btn ${
+                          statusFilter === "disponivel" ? "active" : ""
+                        }`}
+                        onClick={() => setStatusFilter("disponivel")}
+                      >
+                        Disponíveis
+                      </button>
+                      {/*<button
+                        className={`btn btn-sm filter-btn ${
+                          statusFilter === "aguardando" ? "active" : ""
+                        }`}
+                        onClick={() => setStatusFilter("aguardando")}
+                      >
+                        Aguardando
+                      </button>*/}
+                      <button
+                        className={`btn btn-sm filter-btn ${
+                          statusFilter === "em_treinamento" ? "active" : ""
+                        }`}
+                        onClick={() => setStatusFilter("em_treinamento")}
+                      >
+                        Em Treinamento
+                      </button>
+                      <button
+                        className={`btn btn-sm filter-btn ${
+                          statusFilter === "meus_alunos" ? "active" : ""
+                        }`}
+                        onClick={() => setStatusFilter("meus_alunos")}
+                      >
+                        Meus Alunos
+                      </button>
+                    </div>
+                    <div className="search-wrapper">
+                      <input
+                        type="text"
+                        id="name-filter"
+                        placeholder="Filtrar por nome..."
+                        value={nameFilter}
+                        onChange={(e) => setNameFilter(e.target.value)}
+                      />
+                      {nameFilter && (
+                        <button
+                          className="clear-btn"
+                          onClick={() => setNameFilter("")}
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div id="aluno-list-container">
+                    <div className="aluno-list">
+                      {filteredAlunos.length > 0 ? (
+                        filteredAlunos.map((aluno) => (
+                          <AlunoCard
+                            key={aluno.id}
+                            aluno={aluno}
+                            activeSessions={activeSessions}
+                            timeInStatus={timeAgoToDisplay[aluno.id] || ''}
+                            treinadores={treinadores}
+                            profile={profile}
+                            onAssumirTreino={handleAssumirTreino}
+                            isMenuOpen={openAlunoMenuId === aluno.id} // <<< CONECTADO
+                            onToggleMenu={() => setOpenAlunoMenuId(prevId => prevId === aluno.id ? null : aluno.id)} // <<< CONECTADO
+                            onNavigateToWorkout={handleNavigateToWorkout}
+                            onGerenciarTreinos={handleGerenciarTreinos}
+                            onVerHistorico={handleVerHistorico} 
+                            ritmo={ritmosByAluno[aluno.id]}
+                          />
+                        ))
+                      ) : (
+                        <div className="nenhum-aluno">Nenhum aluno encontrado.</div>
+                      )}
+                    </div>
+                  </div>
+                  </>
+                )}
+              </main>
               </div>
-            </main>
-          </div>
-        </div>
-      );
-      break;
-case "gerenciar_perfis":
+            </div>
+          );
+          break;
+    case "gerenciar_perfis":
   pageContent = (
     <div className="container">
       {/* Usando o page-header padrão para telas secundárias */}
@@ -2149,8 +3066,8 @@ case "gerenciar_perfis":
             key={pef.id}
             pef={pef}
             onEdit={() => handleOpenEditPefModal(pef)}
-            onToggleStatus={() => handleTogglePefStatus(pef.id)}
-            onResetPassword={() => handleResetPassword(pef.nome)}
+            onToggleStatus={() => handleTogglePefStatus(pef.id, pef.status)}
+            onResetPassword={() => handleResetPassword(pef)}
           />
         ))}
     </div>
@@ -2159,54 +3076,63 @@ case "gerenciar_perfis":
     </div>
   );
   break;
-  }
-
-
-  if (!profile) {
-  return (
-    <div>
-      Usuário não autenticado. Por favor, entre em contato com o administrador do sistema.
-    </div>
-  );
-} //trava de segurança para o caso de não haver pef com login válido
-  return (
-    <>
-      {pageContent}
-      {exercicioEmEdicao && (
-        <EditExerciseModal
-          exercicio={exercicioEmEdicao.exercicio} // Passamos apenas o objeto do exercício
-          onClose={handleCloseEditModal}
-          onSave={handleSaveExercicio}
-        />
-      )}
-      {/* NOVO: Modal de Upload de CSV (renderização correta) */}
-      {isUploadModalOpen && (
-        <CsvUploadModal
-          onClose={() => setUploadModalOpen(false)} 
-          onImportSuccess={handleAlunosImported}
-        />
-      )}
-      {alunoParaVerHistorico && (
-        <HistoricoModal 
-          aluno={alunoParaVerHistorico} 
-          onClose={() => setAlunoParaVerHistorico(null)} 
-        />
-      )}
-      {pefEmEdicao && (
-        <PefEditModal
-          pef={pefEmEdicao}
-          onClose={() => setPefEmEdicao(null)}
-          onSave={handleUpdatePef}
-        />
-      )}
-      {isAddPefModalOpen && (
-      <PefAddModal
-        onClose={() => setAddPefModalOpen(false)}
-        onSave={handlePefSubmit}
-        />
-      )}
-    </>
-  );
+    }}
+    if (!profile) {
+    return (
+      <div>
+        Usuário não autenticado. Por favor, entre em contato com o administrador do sistema.
+      </div>
+    );
+  } //trava de segurança para o caso de não haver pef com login válido
+    return (
+      <>
+        {pageContent}
+        {exercicioEmEdicao && (
+          <EditExerciseModal
+            exercicio={exercicioEmEdicao} // Passamos apenas o objeto do exercício
+            onClose={handleCloseEditModal}
+            onSave={handleSaveExercicio}
+          />
+        )}
+        {isGerenciarTreinoModalOpen && exercicioEmEdicao && (
+          <EditExerciseModal
+            exercicio={exercicioEmEdicao}
+            onClose={() => {
+              setGerenciarTreinoModalOpen(false);
+              setExercicioEmEdicao(null);
+            }}
+            onSave={handleSaveExercicio}
+          />
+        )}
+        {isUploadModalOpen && (
+          <CsvUploadModal
+            onClose={() => setUploadModalOpen(false)} 
+            onImportSuccess={handleAlunosImported}
+          />
+        )}
+        {alunoParaVerHistorico && historicoOpen && (
+          <HistoricoModal
+            aluno={alunoParaVerHistorico}
+            rows={historicoRows}
+            loading={historicoOpen.loading}
+            onClose={handleCloseHistorico}
+          />
+        )}
+        {pefEmEdicao && (
+          <PefEditModal
+            pef={pefEmEdicao}
+            onClose={() => setPefEmEdicao(null)}
+            onSave={handleUpdatePef}
+          />
+        )}
+        {isAddPefModalOpen && (
+          <PefAddModal
+            onClose={() => setAddPefModalOpen(false)}
+            onSave={handlePefSubmit}
+          />
+        )}
+      </>
+    );
 }
 // =======================================================
 // 5. SUB-COMPONENTES DE APRESENTAÇÃO
@@ -2214,107 +3140,131 @@ case "gerenciar_perfis":
 
 function AlunoCard({
   aluno,
+  ritmo,
+  activeSessions,
   timeInStatus,
   treinadores,
   profile,
   isMenuOpen,
   onToggleMenu,
-  onUpdateStatus,
   onNavigateToWorkout,
-  onGerenciarPlanos,
+  onGerenciarTreinos,
   onVerHistorico,
+  onAssumirTreino,
 }: {
   aluno: Aluno;
+  ritmo: 'no_ritmo' | 'atrasado' | undefined;
+  activeSessions: ActiveSession[];
   timeInStatus: string;
   treinadores: PEF[];
   profile: PEF;
   isMenuOpen: boolean;
   onToggleMenu: () => void;
-  onUpdateStatus: (
-    event: React.MouseEvent<HTMLButtonElement> | null,
-    alunoId: number,
-    newStatus: Aluno["status"],
-    pefId?: number | null
-  ) => void;
-  onNavigateToWorkout: (alunoId: number) => void;
-  onGerenciarPlanos: (alunoId: number) => void;
-  onVerHistorico: (alunoId: number) => void;
+  onNavigateToWorkout: (alunoId: string) => void;
+  onGerenciarTreinos: (alunoId: string) => void;
+  onVerHistorico: (alunoId: string) => void;
+  onAssumirTreino: (sessionId: string) => void;
 }) {
-    const statusMap = {
-    disponivel: "Disponível",
-    aguardando: "Aguardando",
-    em_treinamento: "Em Treinamento",
-  };
-    const getPefFullNameById = (id: number) => {
-    const pef = treinadores.find((p) => p.id === id); // <<< USE A PROP AQUI
-    return pef
-      ? `${pef.nome.split(" ")[0]} ${pef.nome.split(" ").slice(-1)[0]}`
-      : "N/A";
+
+  useEffect(() => {
+    // A função que será chamada em qualquer clique na página
+    function handleClickOutside(event: MouseEvent) {
+      // Se o menu existe E o clique NÃO foi dentro dele...
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onToggleMenu(); // ...chama a função para fechar o menu.
+      }
+    }
+
+    // Só adicionamos o "escutador" de cliques se o menu estiver aberto
+    if (isMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    // Função de limpeza: remove o "escutador" quando não for mais necessário
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isMenuOpen, onToggleMenu]); // Dependências do efeito
+
+const sessaoAtiva = activeSessions.find(s => {
+  // --- CÓDIGO DE DEPURAÇÃO ---
+  if (aluno.nome === "Ana Júlia Ribeiro" || aluno.nome === "Clara Dias") {
+    console.log(`--- Verificando para ${aluno.nome} ---`);
+    console.log(`ID do Aluno no Card: ${aluno.id} (Tipo: ${typeof aluno.id})`);
+    console.log(`ID do Aluno na Sessão: ${s.alunoId} (Tipo: ${typeof s.alunoId})`);
+    console.log('------------------------------------');
+  }
+  // --- FIM DO CÓDIGO DE DEPURAÇÃO ---
+
+  return s.alunoId === aluno.id; 
+});
+const menuRef = useRef<HTMLDivElement>(null);
+const isEmTreinamento = !!sessaoAtiva;
+
+/*  const statusExibicao = isEmTreinamento ? 'em_treinamento' : aluno.matricula_status; */
+  
+const pefDaSessao = isEmTreinamento ? treinadores.find(p => p.id === sessaoAtiva.pef_responsavel_id) : null;
+  
+const getPefFullNameById = (id: string | null | undefined) => {
+  // Guarda de segurança: verifica se o id existe e se 'treinadores' é de fato um array
+  if (!id || !Array.isArray(treinadores)) {
+    return "N/A"; // Retorna um valor padrão seguro
+  }
+  const pef = treinadores.find(p => p.id === id); // A comparação agora funciona (string vs string)
+
+  return pef
+    ? `${pef.nome.split(" ")[0]} ${pef.nome.split(" ").slice(-1)[0]}`
+    : "PEF não encontrado";
+};
+const statusMatriculaMap = {
+  ativo: "Matrícula Ativa",
+  inativo: "Matrícula Inativa",
+  trancado: "Matrícula Trancada",
+};
+const statusSessaoTexto = "Em Treinamento";
+
+const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button, a")) return;
+if (isEmTreinamento) {onNavigateToWorkout(aluno.id);
+    }
   };
 
-  const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("button, a")) {
-      return;
+const renderActions = () => {
+  if (isEmTreinamento) {
+    // Se está em treinamento COM OUTRO PEF, mostra "Assumir Treino"
+    if (sessaoAtiva && sessaoAtiva.pef_responsavel_id !== profile.id) {
+      return (
+        <button className="action-btn"
+        onClick={() => onAssumirTreino(sessaoAtiva.id)}>
+          Assumir Treino
+        </button>
+      );
     }
-    if (aluno.status === "em_treinamento") {
-      onNavigateToWorkout(aluno.id);
-    }
-  };
-  const renderActions = () => {
-    switch (aluno.status) {
-      case "disponivel":
-        return (
-          <button
-            className="action-btn"
-            onClick={(e) => onUpdateStatus(e, aluno.id, "aguardando")}
-          >
-            {" "}
-            Incluir na Fila{" "}
-          </button>
-        );
-      case "aguardando":
-        return (
-          <button
-            className="action-btn"
-            onClick={() => onNavigateToWorkout(aluno.id)}
-          >
-            {" "}
-            Iniciar Treino{" "}
-          </button>
-        );
-      case "em_treinamento":
-        if (aluno.pef_responsavel_id !== profile.id) {
-          return (
-            <button
-              className="action-btn"
-              onClick={(e) =>
-                onUpdateStatus(e, aluno.id, "em_treinamento", profile.id)
-              }
-            >
-              {" "}
-              Assumir Treino{" "}
-            </button>
-          );
-        }
-        return null;
-      default:
-        return null;
-    }
-  };
+    // Se estiver em treinamento com o PEF atual, não mostra nada.
+    return null;
+  } else {
+    // Se NÃO está em treinamento, está disponível. Mostra "Iniciar Treino".
+    return (
+      <button className="action-btn" onClick={() => onNavigateToWorkout(aluno.id)}>
+        Iniciar Treino
+      </button>
+    );
+  }
+};
+
+
+
   return (
     <div
       className="info-card"
       onClick={handleCardClick}
-      style={{
-        cursor: aluno.status === "em_treinamento" ? "pointer" : "default",
-      }}
+      style={{cursor: isEmTreinamento ? "pointer" : "default"}}
     >
       {" "}
       <div className="card-header">
         {" "}
         <h3 className="title-card">{aluno.nome}</h3>{" "}
-        <div className="card-options-wrapper">
-          {" "}
+        <div className="card-options-wrapper" ref={menuRef}>
           <button
             className="options-icon"
             onClick={(e) => {
@@ -2322,57 +3272,64 @@ function AlunoCard({
               onToggleMenu();
             }}
           >
-            {" "}
             {optionsIcon}
-          </button>{" "}
+          </button>
           {isMenuOpen && (
             <div className="options-menu">
-              {" "}
               <button
                 className="menu-item"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onGerenciarPlanos(aluno.id);
+                  onGerenciarTreinos(aluno.id);
+                  onToggleMenu();
                   }}
               >
-                {" "}
-                Gerenciar Sessões de Treino{" "}
-              </button>{" "}
+                Gerenciar Sessões de Treino
+              </button>
               <button
                 className="menu-item"
                 onClick={(e) => {
                   e.stopPropagation();
                   onVerHistorico(aluno.id);
+                  onToggleMenu();
                 }}
               >
                 Ver Histórico de Treinos
               </button>
             </div>
-          )}{" "}
-        </div>{" "}
+          )}
+        </div>
       </div>{" "}
       <div className="card-body">
         <div className="status-line">
-          <span className={`status-tag status-tag-${aluno.status.replace("_", "-")}`}>
-            {statusMap[aluno.status]}
-          </span>
-          <span className="status-timer">⏰ {timeInStatus}</span>
-          {aluno.status === "em_treinamento" && aluno.ritmo && (
-            <div className={`ritmo-treino ritmo-${aluno.ritmo}`}>
+          {isEmTreinamento ? (
+            <span className="status-tag status-tag-em-treinamento">
+              {statusSessaoTexto}
+            </span>
+          ) : (
+            <span className={`status-tag status-tag-disponivel`}>
+              Disponível
+            </span>
+          )}
+              <span className="status-timer">
+              {isEmTreinamento && (
+              <span className="status-timer">⏰ {timeInStatus}</span>
+          )}</span>
+          {isEmTreinamento && ritmo && (
+            <div className={`ritmo-treino ritmo-${ritmo}`}>
               <span className="ritmo-dot"></span>
-              {aluno.ritmo === "no_ritmo" ? "No ritmo" : "Atrasado"}
+              {ritmo === 'atrasado' ? 'Atrasado' : 'No ritmo'}
             </div>
           )}
         </div>
 
-        {aluno.status === "em_treinamento" && (
+        {isEmTreinamento && ( // <-- MUDANÇA: Lógica para exibir PEF agora usa pefDaSessao
           <div className="pef-resp">
-            Com: <strong>{getPefFullNameById(aluno.pef_responsavel_id!)}</strong>
+            Com: <strong>{getPefFullNameById(pefDaSessao?.id)}</strong>
           </div>
         )}
-
-        </div>
-      <div className="actions">{renderActions()}</div>{" "}
+      </div>
+      <div className="actions">{renderActions()}</div>
     </div>
   );
 }
@@ -2384,7 +3341,7 @@ function PefCard({
 }: {
   pef: PEF;
   onEdit: () => void;
-  onToggleStatus: () => void;
+  onToggleStatus: (pefId: string, statusAtual: 'ativo' | 'inativo') => void;
   onResetPassword: () => void;
 }) {
   const isAtivo = pef.status === 'ativo';
@@ -2430,8 +3387,11 @@ function PefCard({
         <button onClick={onEdit} className="btn btn-icon" title="Editar PEF">
           {editIcon} {/* <<< ÍCONE PADRÃO */}
         </button>
-        <button onClick={onToggleStatus} className="btn btn-icon" title={isAtivo ? 'Desativar PEF' : 'Ativar PEF'}>
-          {isAtivo ? deactivateIcon : activateIcon} {/* <<< ÍCONES PADRÃO */}
+        <button onClick={() => onToggleStatus(pef.id, pef.status)}
+                className="btn btn-icon"
+                title={isAtivo ? 'Desativar PEF' : 'Ativar PEF'}
+                >
+                {isAtivo ? deactivateIcon : activateIcon} {/* <<< ÍCONES PADRÃO */}
         </button>
         <button onClick={onResetPassword} className="btn btn-icon" title="Resetar Senha">
           {resetIcon} {/* <<< ÍCONE NOVO/PADRÃO */}
@@ -2468,13 +3428,15 @@ const validatePefData = (pefData: PEF): Record<string, string> => {
 
     return validationErrors;
   };
-  const handleSaveClick = () => {
-  // 1. Roda a validação com os dados mais recentes do formulário
+// Em app/page.tsx, dentro do componente PefAddModal
+
+const handleSaveClick = () => {
+  // 1. Roda a função de validação que já existe dentro do PefEditModal
   const validationErrors = validatePefData(dadosEditados);
-  // 2. Atualiza o estado de erros para exibir ou limpar as mensagens na tela
+  // 2. Atualiza o estado de erros para este modal
   setErrors(validationErrors);
 
-  // 3. Se o objeto de erros estiver vazio, chama a função onSave
+  // 3. Se os dados forem válidos, chama a função onSave para salvar as edições
   if (Object.keys(validationErrors).length === 0) {
     onSave(dadosEditados);
   }
@@ -2492,7 +3454,7 @@ const validatePefData = (pefData: PEF): Record<string, string> => {
         {/* 2. Usando o Body Unificado */}
         <div className="modal-body">
            <div className="input-group">
-              <label htmlFor="pef-nome">Nome</label>
+              <label htmlFor="pef-nome">Nome Completo</label>
               <input
                 id="pef-nome"
                 type="text"
@@ -2500,6 +3462,27 @@ const validatePefData = (pefData: PEF): Record<string, string> => {
                 onChange={(e) => handleChange('nome', e.target.value)}
               />
            </div>
+          <div className="input-group">
+            <label htmlFor="pef-cpf">CPF</label>
+            <input
+              id="pef-cpf"
+              type="text"
+              value={dadosEditados.cpf || ''}
+              onChange={(e) => handleChange('cpf', e.target.value)}
+              placeholder="000.000.000-00"
+              className={errors.cpf ? 'invalid' : ''} // Reutilização do padrão de erro
+            />
+            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+          </div>
+           <div className="input-group">
+              <label htmlFor="pef-email">E-mail</label>
+              <input
+                id="pef-email"
+                type="email"
+                value={dadosEditados.email || ''} 
+                disabled // O atributo 'disabled' torna o campo não editável
+              />
+            </div>
            <div className="input-group-checkbox">
             <input
               id="pef-estagiario"
@@ -2539,25 +3522,16 @@ const validatePefData = (pefData: PEF): Record<string, string> => {
             />
             {errors.cref && <span className="error-message">{errors.cref}</span>}
           </div>
-          <div className="input-group">
-            <label htmlFor="pef-cpf">CPF</label>
-            <input
-              id="pef-cpf"
-              type="text"
-              value={dadosEditados.cpf || ''}
-              onChange={(e) => handleChange('cpf', e.target.value)}
-              placeholder="000.000.000-00"
-              className={errors.cpf ? 'invalid' : ''} // Reutilização do padrão de erro
-            />
-            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
-          </div>
           {/* Futuros campos irão aqui dentro do modal-body */}
         </div>
 
         {/* 3. Usando as Actions Unificadas */}
         <div className="modal-actions">
-          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={handleSaveClick}>Salvar</button>
+          {/* Opcional: Adicionar um espaço para futuros erros de API */}
+          <div className="button-group">
+            <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleSaveClick}>Salvar</button>
+          </div>
         </div>
 
       </div>
@@ -2573,7 +3547,7 @@ function SelectPlanView({
   onSelectPlan: (event: React.MouseEvent<HTMLButtonElement>) => void;
   onCancel: () => void;
 }) {
-  const planosAtivos = aluno.planos.filter((p) => p.ativo);
+  const treinosAtivos = aluno.treino.filter((p) => p.status === 'ativo');
 return (
   <div className="modal-overlay" onClick={onCancel}>
     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -2593,13 +3567,13 @@ return (
         </p>
 
         <div className="plan-selection-list">
-          {planosAtivos.map((plano) => (
-            <button key={plano.id} value={plano.id} onClick={onSelectPlan}>
-              {plano.nome}
+          {treinosAtivos.map((treino) => (
+            <button key={treino.id} value={treino.id} onClick={onSelectPlan}>
+              {treino.nome}
             </button>
           ))}
-          {planosAtivos.length === 0 && (
-            <p className="nenhum-plano" style={{textAlign: 'center'}}>Nenhum treino ativo encontrado.</p>
+          {treinosAtivos.length === 0 && (
+            <p className="nenhum-treino" style={{textAlign: 'center'}}>Nenhum treino ativo encontrado.</p>
           )}
         </div>
       </div>
@@ -2613,45 +3587,101 @@ return (
 function LiveWorkoutView({
   session,
   aluno,
+  ritmo,
+  treinoAtivo,
   onBack,
   timeInTraining,
+  exerciciosDoTreino,
   onFinishWorkout,
   onUpdateExercise,
   onEditarExercicio,
-  onDeleteExercise,
+  onExcluirExercicio,
+  exerciciosParaRenderizar,
+  setExerciciosDoTreino,
+  isWorkoutLoading,
 }: {
   session: ActiveSession;
   aluno: Aluno;
+  ritmo: 'no_ritmo' | 'atrasado';
+  treinoAtivo: Treino | null; 
   onBack: () => void;
+  onFinishWorkout: () => void;
   timeInTraining: string;
-  onFinishWorkout: (alunoId: number) => void;
+  exerciciosDoTreino: ExercicioDeSessao[];
   onUpdateExercise: (
-    exerciseId: number,
+    exercicioId: string,
     status: LiveExercise["status"]
   ) => void;
-    onEditarExercicio: (alunoId: number, planoId: number, exercicioId: number) => void; 
-    onDeleteExercise: (exerciseId: number) => void;
+  onEditarExercicio: (treinoId: string, exercicioId: string) => void;
+  onExcluirExercicio: (exercicioId: string) => void; // assinatura mantida
+  exerciciosParaRenderizar: ExercicioComStatus[];
+  setExerciciosDoTreino: React.Dispatch<React.SetStateAction<ExercicioDeSessao[]>>;
+  isWorkoutLoading: boolean;
 }) {
-  const plano = aluno.planos.find((p) => p.id === session.planoId)!;
-  console.log("DEBUG - plano encontrado:", plano);
-  console.log("DEBUG - session.planoId:", session.planoId);
-  console.log("DEBUG - aluno.planos:", aluno.planos);
-  const finishedCount = session.exercises.filter(
-    (ex) => ex.status === "finalizado"
-  ).length;
-  const percentage =
-    plano.exercicios.length > 0
-      ? ((finishedCount / plano.exercicios.length) * 100).toFixed(0)
-      : "0";
-  const rhythmStatus = aluno.ritmo || "no_ritmo";
-  const sortedExercises = [...session.exercises].sort((a, b) => {
-    const statusOrder = { executando: 1, "nao-iniciado": 2, finalizado: 3 };
-    return statusOrder[a.status] - statusOrder[b.status];
-  });
 
+    if (isWorkoutLoading) {
+return <LoadingSpinner message="Carregando detalhes do treino..." />;
+  }
+  
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [exercicioEmEdicao, setExercicioEmEdicao] = useState<ExercicioDeSessao | null>(null);
+
+  const handleOpenEditModal = (exercicio: ExercicioDeSessao) => {
+  setExercicioEmEdicao(exercicio);
+  setEditModalOpen(true);
+};
+
+const handleCloseEditModal = () => {
+  setExercicioEmEdicao(null);
+  setEditModalOpen(false);
+};
+
+const handleSaveExercicio = async (exercicioAtualizado: ExercicioDeSessao) => {
+  try {
+    // 1. Persiste a mudança no Supabase (na tabela treino_exercicios)
+    const { error } = await supabase
+      .from('treino_exercicios')
+      .update({
+        series: exercicioAtualizado.series,
+        repeticoes: exercicioAtualizado.repeticoes,
+        carga: exercicioAtualizado.carga,
+        observacoes: exercicioAtualizado.observacoes,
+      })
+      .eq('id', exercicioAtualizado.id);
+
+    if (error) throw error;
+
+    // 2. Atualiza o estado local para a UI refletir a mudança instantaneamente
+    setExerciciosDoTreino(currentExercicios =>
+      currentExercicios.map(ex =>
+        ex.id === exercicioAtualizado.id ? exercicioAtualizado : ex
+      )
+    );
+    
+    // 3. Fecha o modal
+    handleCloseEditModal();
+    // Opcional: Adicionar um feedback de sucesso (ex: alert('Exercício atualizado!'))
+
+  } catch (error) {
+    console.error("Erro ao salvar o exercício:", error);
+    alert("Não foi possível salvar as alterações no exercício.");
+  }
+};
+
+  // Contadores/percentual do header
+  const totalExercicios = exerciciosDoTreino.length;
+  const finishedCount = session.exercises.filter((ex) => ex.status === "finalizado").length;
+  const percentage = totalExercicios > 0 ? ((finishedCount / totalExercicios) * 100).toFixed(0) : "0";
+
+  // --- NOVO: combinamos "detalhes" (exerciciosDoTreino) com "status" (session.exercises)
+
+
+  // Você já recebe 'ritmo' por props; se preferir o aluno.ritmo, troque aqui.
+  const rhythmStatus = ritmo || "no_ritmo";
+console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
   return (
+    <>
     <div className="container workout-view">
-      {" "}
       <header className="page-header">
         <div className="header-left">
           <button onClick={onBack} className="back-button">
@@ -2661,12 +3691,11 @@ function LiveWorkoutView({
 
         <div className="header-text-container">
           <h1 className="title-page">{aluno.nome}</h1>
-          <h2 className="subtitle-page">{plano.nome}</h2>
+          <h2 className="subtitle-page">{treinoAtivo?.nome}</h2>
         </div>
       </header>
 
-      {/* 2. O conteúdo específico da sessão agora vive dentro do <main> */}
-      <main className="workout-session-details"> {/* Adicionamos uma classe para estilização futura */}
+      <main className="workout-session-details">
         <div className="header-row-2">
           <div className="time-info-group">
             <span className="label">Início:</span>
@@ -2685,138 +3714,107 @@ function LiveWorkoutView({
 
         <div className="header-row-3">
           <span className="progress-label">
-            {finishedCount}/{plano.exercicios.length}
+            {finishedCount}/{totalExercicios}
           </span>
           <div className="progress-bar-container">
             <div
               className={`progress-bar-fill ritmo-${rhythmStatus}`}
               style={{ width: `${percentage}%` }}
-            ></div>
+            />
           </div>
           <span className={`progress-label ritmo-treino ritmo-${rhythmStatus}`}>
             <span className="ritmo-dot"></span> {rhythmStatus.replace("_", " ")}
           </span>
         </div>
       </main>
-      <div className="exercise-list">
-        {" "}
-        {sortedExercises.map((liveEx) => {
-          const exercicioInfo = initialMockData.exercicios_biblioteca.find(
-            (libEx) => libEx.id === liveEx.id
-          );
-          const planoExercicio = plano.exercicios.find(
-            (pe) => pe.id === liveEx.id
-          );
-          console.log("🟡 DEBUG LiveWorkoutView:");
-console.log("liveEx.id:", liveEx.id);
-console.log("exercicioInfo:", exercicioInfo);
-console.log("planoExercicio:", planoExercicio);
 
-          if (!exercicioInfo || !planoExercicio) return null;
-          const detailsParts = [];
-          if (planoExercicio.series)
-            detailsParts.push(
-              <span key="series">
-                <strong>Séries:</strong> {planoExercicio.series}
-              </span>
-            );
-          if (planoExercicio.repeticoes)
-            detailsParts.push(
-              <span key="reps">
-                <strong>Reps:</strong> {planoExercicio.repeticoes}
-              </span>
-            );
-          if (planoExercicio.carga)
-            detailsParts.push(
-              <span key="carga">
-                <strong>Carga:</strong> {planoExercicio.carga}
-              </span>
-            );
-          if (planoExercicio.observacoes)
-            detailsParts.push(
-              <span key="obs">
-                <strong>Obs:</strong> {planoExercicio.observacoes}
-              </span>
-            );
+      {/* --- NOVO: iteração passa a usar 'exerciciosParaRenderizar' --- */}
+      <div className="exercise-list">
+        {exerciciosParaRenderizar.map((exercicio) => {
+          const detailsParts: React.ReactNode[] = [];
+          if (exercicio.series) detailsParts.push(<span key="series"><strong>Séries:</strong> {exercicio.series}</span>);
+          if (exercicio.repeticoes) detailsParts.push(<span key="reps"><strong>Reps:</strong> {exercicio.repeticoes}</span>);
+          if (exercicio.carga) detailsParts.push(<span key="carga"><strong>Carga:</strong> {exercicio.carga}</span>);
+          if (exercicio.observacoes) detailsParts.push(<span key="obs"><strong>Obs:</strong> {exercicio.observacoes}</span>);
+
           return (
             <div
-              key={liveEx.id}
-              className={`exercise-item status-${liveEx.status.replace(
-                "_",
-                "-"
-              )}`}
+              key={exercicio.exercicio_id}
+              className={`exercise-item status-${exercicio.status.replace("_", "-")}`}
             >
               <div className="exercise-header">
-                <h4>{exercicioInfo.nome}</h4>
+                <h4>{exercicio.nome}</h4>
                 <div className="icons">
                   <button
-                  className="btn btn-icon"
-                  title="Editar"
-                  onClick={() => onEditarExercicio(aluno.id, plano.id, liveEx.id)}
+                    className="btn btn-icon"
+                    title="Editar"
+                    onClick={() => handleOpenEditModal(exercicio)}
                   >
                     {editIcon}
                   </button>
-                  <button 
+                  {/* O botão de excluir foi removido desta tela
+                  <button
                     className="btn btn-icon btn-delete"
                     title="Excluir"
-                    onClick={() => onDeleteExercise(liveEx.id)}
+                    onClick={() => onExcluirExercicio(exercicio.exercicio_id)}
                   >
                     {deleteIcon}
                   </button>
+                    */}
                 </div>
               </div>
+
               <div className="exercise-details">
                 {detailsParts.map((part, index) => (
                   <React.Fragment key={index}>
-                    {part} {index < detailsParts.length - 1 && "; "}{" "}
+                    {part}{index < detailsParts.length - 1 && "; "}
                   </React.Fragment>
-                ))}{" "}
-              </div>{" "}
+                ))}
+              </div>
+
               <div className="exercise-controls">
-                {" "}
-                {liveEx.status === "nao-iniciado" && (
+                {exercicio.status === "nao-iniciado" && (
                   <button
                     className="btn-exercise-status start"
-                    onClick={() => onUpdateExercise(liveEx.id, "executando")}
+                    onClick={() => onUpdateExercise(exercicio.exercicio_id, "executando")}
                   >
-                    {" "}
-                    Iniciar{" "}
+                    Iniciar
                   </button>
-                )}{" "}
-                {liveEx.status === "executando" && (
+                )}
+                {exercicio.status === "executando" && (
                   <button
                     className="btn-exercise-status finish"
-                    onClick={() => onUpdateExercise(liveEx.id, "finalizado")}
+                    onClick={() => onUpdateExercise(exercicio.exercicio_id, "finalizado")}
                   >
-                    {" "}
-                    Finalizar{" "}
+                    Finalizar
                   </button>
-                )}{" "}
-                {liveEx.status === "finalizado" && (
-                  <div className="exercise-details-finalizado">
-                    {" "}
-                    Finalizado{" "}
-                  </div>
-                )}{" "}
-              </div>{" "}
+                )}
+                {exercicio.status === "finalizado" && (
+                  <div className="exercise-details-finalizado">Finalizado</div>
+                )}
+              </div>
             </div>
           );
-        })}{" "}
-      </div>{" "}
+        })}
+      </div>
+
       <div className="workout-actions">
-        {" "}
-        <button
-          className="action-btn btn-finalizar-treino"
-          onClick={() => onFinishWorkout(aluno.id)}
-        >
-          {" "}
-          Finalizar Treino{" "}
-        </button>{" "}
-      </div>{" "}
+        <button className="action-btn btn-finalizar-treino" onClick={onFinishWorkout}>
+          Finalizar Treino
+        </button>
+      </div>
     </div>
+    {isEditModalOpen && (
+      <EditExerciseModal
+        exercicio={exercicioEmEdicao}
+        onClose={handleCloseEditModal}
+        onSave={handleSaveExercicio}
+      />
+    )}
+    </>
   );
 }
-function ExerciseDetailsTable({ exercise }: { exercise: ExercicioPlano }) {
+function ExerciseDetailsTable({ exercise }: { exercise: TreinoExercicio }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isScrolledToEnd, setIsScrolledToEnd] = useState(false);
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
@@ -2866,233 +3864,155 @@ function ExerciseDetailsTable({ exercise }: { exercise: ExercicioPlano }) {
     </div>
   );
 }
-function GerenciarPlanosPage({
+function GerenciarTreinosPage({
   aluno,
-  activeSession, // LINHA ADICIONADA
-  onEditarExercicio,
+  activeSession,
   onBack,
-  onTogglePlanoAtivo,
   onIniciarTreino,
-  onEditarPlano,
-  onCriarPlano,
-  onExcluirPlano,
-  onExcluirExercicio, // <-- Receba a nova prop
+  onEditarTreino,
+  onEditarExercicio,
+  onCriarTreino,
+  onExcluirTreino,
+  onExcluirExercicio,
+  onToggleTreinoStatus,
 }: {
   aluno: Aluno;
-  onEditarExercicio: (planoId: number, exercicioId: number) => void; // <-- Defina o tipo dela
-
-  activeSession: ActiveSession | null | undefined; // LINHA ADICIONADA
+  activeSession: ActiveSession | null | undefined;
   onBack: () => void;
-  onTogglePlanoAtivo: (planoId: number) => void;
-  onIniciarTreino: (planoId: number) => void;
-  onEditarPlano: (planoId: number) => void;
-  onCriarPlano: () => void;
-  onExcluirPlano: (planoId: number) => void;
-  onExcluirExercicio: (planoId: number, exercicioId: number) => void; // <-- Defina o tipo
+  onIniciarTreino: (treinoId: string) => void;
+  onEditarTreino: (treinoId: string) => void;
+  onEditarExercicio: (treinoId: string, exercicioId: string) => void;
+  onCriarTreino: () => void;
+  onExcluirTreino: (treinoId: string) => void;
+  onExcluirExercicio: (treinoId: string, exercicioId: string) => void;
+  onToggleTreinoStatus: (treinoId: string) => void;
 }) {
   const [filtroAtivo, setFiltroAtivo] = useState(true);
-  const [expandedItems, setExpandedItems] = useState<{
-    [key: string]: boolean;
-  }>({});
+  const [expandedItems, setExpandedItems] = useState<{ [key: string]: boolean }>({});
 
   const toggleExpansion = (id: string) => {
     setExpandedItems((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const planosFiltrados = aluno.planos.filter((p) => p.ativo === filtroAtivo);
+  const treinosFiltrados = aluno.treino.filter((p) => p.status === (filtroAtivo ? 'ativo' : 'inativo'));
 
   return (
     <div className="container manage-plans-page">
       <header className="page-header">
-        {" "}
-        {/* ARQUIVO: page.tsx - Refatorando o botão de voltar */}
         <button onClick={onBack} className="back-button">
-          {backIcon}
+          {/* Substitua backIcon pelo seu SVG real se estiver definido fora */}
+          <svg fill="currentColor" viewBox="0 0 24 24"><path d="M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z" /></svg>
         </button>
         <div className="header-text-container">
-          {" "}
-          <h1 className="title-page">{aluno.nome}</h1>{" "}
-          <h2 className="subtitle-page">Gerenciar Sessões de Treino</h2>{" "}
-        </div>{" "}
+          <h1 className="title-page">{aluno.nome}</h1>
+          <h2 className="subtitle-page">Gerenciar Sessões de Treino</h2>
+        </div>
       </header>
       <main>
         <div className="manage-plans-controls">
           <div className="filter-toggle-group">
-            <button
-              onClick={() => setFiltroAtivo(true)}
-              className={filtroAtivo ? "active" : ""}
-            >
-              Planos Ativos
+            <button onClick={() => setFiltroAtivo(true)} className={filtroAtivo ? "active" : ""}>
+              Treinos Ativos
             </button>
-            <button
-              onClick={() => setFiltroAtivo(false)}
-              className={!filtroAtivo ? "active" : ""}
-            >
-              Planos Inativos
+            <button onClick={() => setFiltroAtivo(false)} className={!filtroAtivo ? "active" : ""}>
+              Treinos Inativos
             </button>
           </div>
         </div>
 
         <div className="management-plan-list">
-          {planosFiltrados.map((plano) => {
-            // 1. Bloco de lógica para definir o status
-            /* ARQUIVO: page.tsx - Adicionando o status 'indisponivel' */
-            
-            let planStatus = "inativo"; // Cinza por padrão
-            if (plano.ativo) {
+          {treinosFiltrados.map((treino) => {
+            const exercicios = treino.exercicios || [];
+            let planStatus = "inativo";
+            if (treino.status === 'ativo') {
               if (activeSession) {
-                // Se o aluno já está em um treino...
-                if (activeSession.planoId === plano.id) {
-                  planStatus = "em-treinamento"; // Laranja para o plano em execução
-                } else {
-                  planStatus = "indisponivel"; // Cinza para os outros planos ativos
-                }
+                planStatus = activeSession.treinoId === treino.id ? "em-treinamento" : "indisponivel";
               } else {
-                // Se o aluno está livre...
-                planStatus = "disponivel"; // Verde para os planos ativos
+                planStatus = "disponivel";
               }
             }
-            // 2. O 'return' explícito que estava faltando
             return (
-              <div
-                key={plano.id}
-                className={`management-plan-accordion plan-status-${planStatus}`}
-              >
-                <button
-                  className="accordion-header-manage"
-                  onClick={() => toggleExpansion(`plan-${plano.id}`)}
-                  aria-expanded={!!expandedItems[`plan-${plano.id}`]}
-                  aria-controls={`plan-content-${plano.id}`} // Opcional, mas boa prática
-                >
+              <div key={treino.id} className={`management-plan-accordion plan-status-${planStatus}`}>
+                <button className="accordion-header-manage" onClick={() => toggleExpansion(`treino-${treino.id}`)}>
                   <div className="accordion-title-group">
-                    <span> {planIcon}</span>
-                    <h3>{plano.nome}</h3>
+                    {/* Substitua planIcon pelo seu SVG real */}
+                    <span><svg viewBox="-5 -10 110 135" width="30" height="30" stroke="currentColor"><path d="M83.789 36.82 77.7382 30.7692 80.1366 28.3708C82.3983 26.1091 82.3983 22.4294 80.1366 20.1716 77.8749 17.9099 74.1952 17.9099 71.9374 20.1716L69.539 22.57 63.4882 16.5192C62.5585 15.5895 61.3085 15.07 59.9882 15.07 58.6679 15.07 57.4179 15.5817 56.4882 16.5192L55.7773 17.2301C55.1171 17.8903 54.6992 18.6989 54.4882 19.5504L54.16 19.2223C53.1288 18.1911 51.7616 17.6325 50.3006 17.6325 48.8397 17.6325 47.4725 18.2028 46.4412 19.2223 45.41 20.2535 44.8514 21.6207 44.8514 23.0817 44.8514 24.5426 45.4217 25.9098 46.4412 26.9411L55.8123 36.3122 36.6323 55.4922 27.2612 46.1211C25.1323 43.9922 21.6714 43.9922 19.5424 46.1211 17.4135 48.25 17.4135 51.7109 19.5424 53.8399L19.8706 54.168C18.9995 54.379 18.1909 54.8087 17.5503 55.4571L16.8393 56.1681C14.9096 58.0978 14.9096 61.2462 16.8393 63.1798L22.8901 69.2306 20.4917 71.629C18.23 73.8907 18.23 77.5704 20.4917 79.8282 21.6206 80.9571 23.1011 81.5274 24.5933 81.5274 26.0816 81.5274 27.5621 80.9688 28.6949 79.8282L31.0933 77.4298 37.1441 83.4806C38.1129 84.4493 39.3746 84.9298 40.6441 84.9298 41.9136 84.9298 43.1832 84.4493 44.1441 83.4806L44.8551 82.7696C45.5152 82.1095 45.9332 81.3008 46.1442 80.4493L46.4723 80.7775C47.5035 81.8087 48.8707 82.3673 50.3317 82.3673 51.7926 82.3673 53.1598 81.797 54.1911 80.7775 55.2223 79.7463 55.7809 78.3791 55.7809 76.9181 55.7809 75.4572 55.2106 74.09 54.1911 73.0587L44.82 63.6876 64 44.5076 73.3711 53.8787C74.4297 54.9373 75.832 55.4803 77.2305 55.4803 78.6289 55.4803 80.0313 54.949 81.0899 53.8787 82.1211 52.8475 82.6797 51.4803 82.6797 50.0193 82.6797 48.5584 82.1094 47.1912 81.0899 46.1599L80.7618 45.8317C81.6329 45.6208 82.4337 45.1911 83.0821 44.5426L83.793 43.8317C84.7227 42.902 85.2422 41.652 85.2422 40.3317 85.2422 39.0114 84.7305 37.7614 83.793 36.8317ZM26.969 78.14C25.6487 79.4603 23.4885 79.4603 22.1682 78.14 20.8479 76.8197 20.8479 74.6595 22.1682 73.3392L24.5666 70.9408 29.3674 75.7416ZM43.141 81.0775 42.4301 81.7884C41.4301 82.7884 39.809 82.7884 38.8207 81.7884L18.5237 61.4914C17.5237 60.4914 17.5237 58.8703 18.5237 57.882L19.2346 57.1711C19.7151 56.6906 20.3557 56.4328 21.0432 56.4328 21.7346 56.4328 22.3713 56.6945 22.8518 57.1711L43.1608 77.4801C44.1608 78.4801 44.1491 80.1012 43.1608 81.0895ZM53.371 76.9213C53.371 77.7416 53.0507 78.5111 52.4804 79.0815 51.9101 79.6518 51.1406 79.9721 50.3202 79.9721 49.4999 79.9721 48.7304 79.6518 48.16 79.0815L21.234 52.1555C20.0426 50.9641 20.0426 49.0266 21.234 47.8274 21.8355 47.2258 22.6129 46.9368 23.3942 46.9368 24.1755 46.9368 24.9645 47.2376 25.5544 47.8274L52.4844 74.7574C53.0547 75.3277 53.375 76.0972 53.375 76.9176ZM62.3007 42.8083 43.1207 61.9883 38.3199 57.1875 57.4999 38.0075ZM79.3787 52.1794C78.1873 53.3708 76.2498 53.3708 75.0506 52.1794L48.1206 25.2494C47.5503 24.6791 47.23 23.9096 47.23 23.0892 47.23 22.2689 47.5503 21.4994 48.1206 20.929 48.6909 20.3587 49.4604 20.0384 50.2808 20.0384 51.1012 20.0384 51.8706 20.3587 52.441 20.929L79.371 47.859C79.9413 48.4293 80.2616 49.1988 80.2616 50.0192 80.2616 50.8395 79.9413 51.609 79.371 52.1794ZM73.6404 21.8594C74.9607 20.5391 77.1209 20.5391 78.4412 21.8594 79.7615 23.1797 79.7615 25.3399 78.4412 26.6602L76.0428 29.0586 71.242 24.2578ZM82.0896 42.1294 81.3787 42.8403C80.8982 43.3208 80.2576 43.5786 79.5701 43.5786 78.8786 43.5786 78.242 43.3169 77.7615 42.8403L57.4605 22.5393C56.4605 21.5393 56.4605 19.9182 57.4605 18.9299L58.1714 18.219C58.6714 17.719 59.3198 17.469 59.98 17.469 60.6402 17.469 61.2886 17.719 61.7886 18.219L82.0856 38.516C82.5661 38.9965 82.8239 39.6371 82.8239 40.3246 82.8239 41.016 82.5622 41.6527 82.0856 42.1332Z" /></svg></span>
+                    <h3>{treino.nome}</h3>
                   </div>
-                  <span
-                    className={`chevron ${
-                      expandedItems[`plan-${plano.id}`] ? "expanded" : ""
-                    }`}
-                  >
-                    {chevronIcon}
+                  <span className={`chevron ${expandedItems[`treino-${treino.id}`] ? "expanded" : ""}`}>
+                    {/* Substitua chevronIcon pelo seu SVG real */}
+                    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z" /></svg>
                   </span>
                 </button>
-
                 <div className="plan-meta-actions">
-                  <span>
-                    {plano.exercicios.length}{" "}
-                    {plano.exercicios.length === 1 ? "exercício" : "exercícios"}
-                  </span>
+                  <span>{exercicios.length} {exercicios.length === 1 ? "exercício" : "exercícios"}</span>
                 </div>
-
                 <div className="card-action-icons">
                   {planStatus === "em-treinamento" ? (
-                    // SE o status for 'em-treinamento', renderiza a tag:
-                    <span className="status-tag status-tag-em-treinamento">
-                      Em Treinamento
-                    </span>
+                    <span className="status-tag status-tag-em-treinamento">Em Treinamento</span>
                   ) : (
-                    // SENÃO, verifica se o status é um dos que devem mostrar o botão:
-                    (planStatus === "disponivel" ||
-                      planStatus === "indisponivel") && (
+                    (planStatus === "disponivel" || planStatus === "indisponivel") && (
                       <button
-                        onClick={() => onIniciarTreino(plano.id)}
+                        onClick={() => onIniciarTreino(treino.id)}
                         className="btn-start"
                         disabled={planStatus === "indisponivel"}
-                        title={
-                          planStatus === "indisponivel"
-                            ? "Finalize o treino em andamento para iniciar um novo"
-                            : "Iniciar Treino"
-                        }
+                        title={ planStatus === "indisponivel" ? "Finalize o treino em andamento para iniciar um novo" : "Iniciar Treino" }
                       >
                         Iniciar Treino
                       </button>
                     )
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditarPlano(plano.id);
-                    }}
-                    className="btn btn-icon"
-                    title="Editar Plano"
-                  >
+                  <button onClick={(e) => { e.stopPropagation(); onEditarTreino(treino.id); }} className="btn btn-icon" title="Editar Treino">
                     {editIcon}
                   </button>
+
+                  {/* Botão de Ativar/Desativar */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onTogglePlanoAtivo(plano.id);
+                      onToggleTreinoStatus(treino.id);
                     }}
                     className="btn btn-icon"
-                    title={plano.ativo ? "Desativar Plano" : "Ativar Plano"}
+                    title={treino.status === 'ativo' ? "Desativar Treino" : "Ativar Treino"}
                   >
-                    {plano.ativo ? deactivateIcon : activateIcon}
+                    {treino.status === 'ativo' ? deactivateIcon : activateIcon}
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onExcluirPlano(plano.id);
-                    }}
-                    className="btn btn-icon btn-delete"
-                    title="Excluir Plano"
-                  >
+
+                  <button onClick={(e) => { e.stopPropagation(); onExcluirTreino(treino.id); }} className="btn btn-icon btn-delete" title="Excluir Treino">
                     {deleteIcon}
                   </button>
                 </div>
-
-                <div
-                  className={`accordion-content-manage${
-                    expandedItems[`plan-${plano.id}`] ? " expanded" : ""
-                  }`}
-                >
-                  {expandedItems[`plan-${plano.id}`] && (
+                <div className={`accordion-content-manage${expandedItems[`treino-${treino.id}`] ? " expanded" : ""}`}>
+                  {expandedItems[`treino-${treino.id}`] && (
                     <>
-                      {plano.exercicios.map((ex, index) => {
-                        const libEx =
-                          initialMockData.exercicios_biblioteca.find(
-                            (e) => e.id === ex.id
-                          );
+                      {treino.exercicios.map((ex, index) => {
+                        const nomeExercicio = ex.exercicio?.nome || "Exercício";
+                        const tempId = `ex-${treino.id}-${ex.id}`;
 
-                        // Criamos um objeto no formato que o ExercicioCard espera
-                        const exercicioParaCard: ExercicioComEdicao = {
-                          id: ex.id,
-                          nome: libEx?.nome || "Exercício",
+                        const exercicioParaCard: ExercicioParaFormulario = {
+                          tempId: tempId,
+                          exercicio_id: ex.exercicio_id,
+                          nome: nomeExercicio,
                           series: ex.series,
                           repeticoes: ex.repeticoes,
                           carga: ex.carga,
                           observacoes: ex.observacoes || "",
-                          isEditing: false, // Na tela de Gerenciar, nunca está em modo de edição
+                          isEditing: false,
                         };
+
                         return (
                           <ExercicioCard
-                            key={exercicioParaCard.id}
+                            key={tempId}
                             index={index}
                             exercicio={exercicioParaCard}
-                            isExpanded={
-                              !!expandedItems[
-                                `ex-${plano.id}-${exercicioParaCard.id}`
-                              ]
-                            }
-                            // ATENÇÃO: Na tela de Gerenciar Sessões de Treino, não mostramos os botões
+                            onEdit={() => onEditarExercicio(treino.id, ex.id)}
+                            onDelete={() => onExcluirExercicio(treino.id, ex.id)}
+                            isExpanded={!!expandedItems[tempId]}
+                            onToggleExpansion={() => toggleExpansion(tempId)}
                             showActions={true}
-                            onToggleExpansion={() =>
-                              toggleExpansion(
-                                `ex-${plano.id}-${exercicioParaCard.id}`
-                              )
-                            }
-                            // As funções de onEdit e onDelete não são necessárias aqui
-                            onEdit={() => {
-                              console.log(
-                                `Passo 2: Chamando onEditarExercicio com planoId=${plano.id}, exId=${exercicioParaCard.id}`
-                              );
-                              onEditarExercicio(plano.id, exercicioParaCard.id);
-                            }}
-                            onDelete={() =>
-                              onExcluirExercicio(plano.id, exercicioParaCard.id)
-                            }
                             suggestions={[]}
                             isSearchActive={false}
-                            onSearchChange={() => {}} // <-- ATUALIZE AQUI
+                            onSearchChange={() => { }}
                           />
                         );
                       })}
@@ -3100,23 +4020,12 @@ function GerenciarPlanosPage({
                   )}
                 </div>
               </div>
-            );
+            )
           })}
-
-          {planosFiltrados.length === 0 && (
-            <p className="nenhum-plano">
-              {filtroAtivo ? "Nenhum plano ativo." : "Nenhum plano inativo."}
-            </p>
-          )}
         </div>
       </main>
 
-      {/* 2. ADICIONE O NOVO BOTÃO FLUTUANTE AQUI */}
-      <button
-        onClick={() => onCriarPlano()} // A função onCriarPlano já foi passada como prop
-        className="fab-create-plan"
-        title="Criar Nova Sessão de Treino"
-      >
+      <button onClick={onCriarTreino} className="fab-create-plan" title="Criar Nova Sessão de Treino">
         {addIcon}
       </button>
     </div>
@@ -3129,20 +4038,20 @@ function ExercicioCard({
   showActions,
   isEditable = false,
   validationErrors,
-  suggestions, // <<< NOVA PROP
-  isSearchActive, // <<< NOVA PROP
+  suggestions,
+  isSearchActive,
   onToggleExpansion,
   onEdit,
   onDelete,
   onExercicioChange = () => {},
   onSuggestionSelect,
-  onSearchChange, // <<< NOVA PROP
+  onSearchChange,
 }: ExercicioCardProps) { 
   const errorKey = `exercicios[${index}].nome`;
 
 console.log(errorKey, validationErrors)
 
-  const handleSuggestionClick = (suggestion: ExercicioBiblioteca) => {
+  const handleSuggestionClick = (suggestion: Exercicio) => {
 
 if (onSuggestionSelect) {
     onSuggestionSelect(suggestion); 
@@ -3167,7 +4076,6 @@ if (onSuggestionSelect) {
         >
           {deleteIcon}
         </button>
-
 <div className="card-section">
   <div className="input-group" data-error="exercicioNome">
     <label>Nome do Exercício</label>
@@ -3208,7 +4116,6 @@ if (onSuggestionSelect) {
     )}
           </div>
         </div>
-
         <div className="card-section">
           <div className="exercise-inputs">
             <div className="input-row">
@@ -3311,34 +4218,43 @@ if (onSuggestionSelect) {
 
       {isExpanded && (
         <div className="exercise-card-body">
-          <ExerciseDetailsTable exercise={exercicio as ExercicioPlano} />
+          <ExerciseDetailsTable 
+            exercise={{
+              // Mapeamos as propriedades do tipo 'ExercicioParaFormulario'
+              // para o tipo 'TreinoExercicio' que o componente filho espera.
+              id: exercicio.tempId || '', // Usamos o tempId como 'id' ou um valor padrão
+              treino_id: '', // Não temos essa informação aqui, então passamos um valor padrão
+              exercicio_id: exercicio.exercicio_id,
+              series: exercicio.series,
+              repeticoes: exercicio.repeticoes,
+              carga: exercicio.carga,
+              observacoes: exercicio.observacoes,
+            }} 
+          />
         </div>
       )}
     </div>
   );
 }
-function EditExerciseModal({
+function EditExerciseModal<T extends ExercicioEditavel>({
   exercicio,
   onClose,
   onSave,
-}: EditExerciseModalProps) {
+}: EditExerciseModalProps<T>) {
   // 1. Estado interno para guardar as MUDANÇAS feitas pelo usuário.
   const [editedExercicio, setEditedExercicio] = useState(exercicio);
   const [errors, setErrors] = useState<ExercicioError>({});
     // Buscamos as informações do exercício na biblioteca para usar no cabeçalho.
-  const exercicioInfo = initialMockData.exercicios_biblioteca.find(
-    (ex) => ex.id === editedExercicio?.id);
+  // Para exibir o nome do exercício no modal, você pode simplesmente usar:
+  // <h2>{editedExercicio?.nome}</h2>
   // 2. Handler para atualizar o estado interno quando o usuário digita.
-  const handleInputChange = (campo: keyof ExercicioPlano, valor: string) => {
-    // A verificação de segurança agora é no estado interno
+  const handleInputChange = (campo: keyof TreinoExercicio, valor: string) => {
     if (!editedExercicio) return;
 
-        if (errors[campo as keyof ExercicioError]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
+    if (errors[campo as keyof ExercicioError]) {
+        const newErrors = { ...errors };
         delete newErrors[campo as keyof ExercicioError];
-        return newErrors;
-      });
+        setErrors(newErrors);
     }
     setEditedExercicio({ ...editedExercicio, [campo]: valor });
   };
@@ -3366,7 +4282,7 @@ return (
       <button className="modal-close-btn" onClick={onClose}>&times;</button>
       <div className="modal-header">
         <h2 className="title-modal">Editar Exercício</h2>
-        <p className="subtitle-modal">{exercicioInfo?.nome}</p>
+        <p className="subtitle-modal">{editedExercicio?.nome}</p>
       </div>
 
       <div className="modal-body">
@@ -3435,21 +4351,21 @@ return (
   </div>
 );
 }
-function PlanoEditView({
+function TreinoEditView({
   aluno,
-  plano,
+  treino,
   onBack,
   onSave,
-  onPlanoChange,
+  onTreinoChange,
   onExercicioChange,
   onAddExercicio,
-  onDeleteExercicio,
+  onExcluirExercicio,
   onExercicioSelect,
   validationErrors,
   setValidationErrors,
-}: PlanoEditViewProps) {
+}: TreinoEditViewProps) {
 
-  const pageTitle = plano.nome ? "Editar Sessão de Treino" : "Criar Nova Sessão de Treino";
+    const pageTitle = treino.nome ? "Editar Sessão de Treino" : "Criar Nova Sessão de Treino";
 
   // 3. ESTADO LOCAL PARA CONTROLAR OS CARDS EXPANDIDOS
   const [expandedItems, setExpandedItems] = useState<{
@@ -3457,7 +4373,7 @@ function PlanoEditView({
   }>({});
 
   const [activeSuggestionBoxIndex, setActiveSuggestionBoxIndex] = useState<number | null>(null);
-  const [suggestions, setSuggestions] = useState<ExercicioBiblioteca[]>([]);
+  const [suggestions, setSuggestions] = useState<Exercicio[]>([]);
   const exerciseInputRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
@@ -3473,11 +4389,11 @@ function PlanoEditView({
   const toggleExpansion = (id: string) => {
     setExpandedItems((prev) => ({ ...prev, [id]: !prev[id] }));
   };
-  if (!plano) {
-    return <div>Carregando plano...</div>;
+  if (!treino) {
+    return <div>Carregando treino...</div>;
   }
   return (
-    <div className="container plano-edit-page">
+    <div className="container treino-edit-page">
       <header className="page-header">
         <button onClick={onBack} className="back-button">
           {backIcon}
@@ -3488,33 +4404,32 @@ function PlanoEditView({
         </div>
       </header>
       <main>
-        {/* Input para o nome do plano */}
-<div className="input-group" data-error="planoNome">
-  <label htmlFor="plano-nome">Nome do Plano</label>
+        {/* Input para o nome do treino */}
+<div className="input-group" data-error="treinoNome">
+  <label htmlFor="treino-nome">Nome do Treino</label>
   <input
     type="text"
-    id="plano-nome"
-    value={plano.nome}
-    className={validationErrors.planoNome ? "invalid" : ""}
+    id="treino-nome"
+    value={treino.nome}
+    className={validationErrors.treinoNome ? "invalid" : ""}
     onChange={(e) => {
-      if (validationErrors.planoNome) {
-        setValidationErrors(prev => ({ ...prev, planoNome: '' }));
+      if (validationErrors.treinoNome) {
+        setValidationErrors(prev => ({ ...prev, treinoNome: '' }));
       }
-      onPlanoChange("nome", e.target.value);
+      onTreinoChange("nome", e.target.value);
     }}
     placeholder='Ex: Treino A - Peito e Tríceps'
   />
-  {validationErrors.planoNome && (
-    <span className="error-message">{validationErrors.planoNome}</span>
+  {validationErrors.treinoNome && (
+    <span className="error-message">{validationErrors.treinoNome}</span>
   )}
 </div>
 
-        <h3 className="exercise-list-title">Exercícios do Plano</h3>
+        <h3 className="exercise-list-title">Exercícios do Treino</h3>
 
-        {/* 4. LOOP .MAP() CORRIGIDO E COMPLETO */}
         <div className="exercise-edit-list">
-          {plano.exercicios.map((ex, index) => (
-            <div key={ex.id} ref={activeSuggestionBoxIndex === index ? exerciseInputRef : null}>
+  {treino.exercicios.map((ex, index) => (
+    <div key={ex.tempId || `temp-add-${index}`}>
             <ExercicioCard
               index={index}
               exercicio={ex}
@@ -3522,22 +4437,15 @@ function PlanoEditView({
               validationErrors={validationErrors}
               suggestions={activeSuggestionBoxIndex === index ? suggestions : []}
               isSearchActive={activeSuggestionBoxIndex === index}
-              onSearchChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              onSearchChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
                   const value = e.target.value;
                   // 1. Atualiza o valor do input no estado principal
                   onExercicioChange(index, 'nome', value);
                   // 2. Define este card como o ativo para o autocomplete
                   setActiveSuggestionBoxIndex(index);
                   // 3. Busca as sugestões
-                  if (value.length > 1) {
-                    const normalizedSearch = normalizeString(value);
-                    const filtered = initialMockData.exercicios_biblioteca.filter(libEx =>
-                      normalizeString(libEx.nome).includes(normalizedSearch)
-                    );
-                    setSuggestions(filtered);
-                  } else {
-                    setSuggestions([]);
-                  }
+                  const results = await searchExercicios(value);
+                  setSuggestions(results);
                 }}
               onSuggestionSelect={(suggestion) => {
                   onExercicioSelect(index, suggestion);
@@ -3545,9 +4453,9 @@ function PlanoEditView({
                   setActiveSuggestionBoxIndex(null);
                 }}
               onExercicioChange={(campo, valor) => onExercicioChange(index, campo, valor)}
-              onDelete={() => onDeleteExercicio(ex.id)}
-              isExpanded={!!expandedItems[`ex-${ex.id}`]}
-              onToggleExpansion={() => toggleExpansion(`ex-${ex.id}`)}
+              onDelete={() => onExcluirExercicio(ex.exercicio_id)}
+              isExpanded={!!expandedItems[`ex-${ex.exercicio_id}`]}
+              onToggleExpansion={() => toggleExpansion(`ex-${ex.exercicio_id}`)}
               showActions={!ex.isEditing} // Mostra ações (editar/deletar do modo visualização) apenas se NÃO estiver em modo de edição
               onEdit={() => alert("Funcionalidade de editar um exercício existente a ser implementada")}
             />
@@ -3562,8 +4470,8 @@ function PlanoEditView({
       </main>
 
  <footer className="form-actions">
-<button className="btn btn-save-plan" onClick={() => onSave(plano)}>
-  Salvar Plano
+<button className="btn btn-save-plan" onClick={() => onSave(treino)}>
+  Salvar treino
 </button>
 </footer>
     </div>
@@ -3608,13 +4516,12 @@ const handleStartImport = () => {
           !!row.Nome?.trim() && !!row.CPF?.trim() // Ignora linhas sem nome ou sem CPF
         )
         .map((row, index) => ({
-          id: Date.now() + index,
+          id: String(Date.now() + index),
           nome: row.Nome.trim(),
           cpf: row.CPF.trim(), // <<< PROCESSA O NOVO CAMPO CPF
-          status: "disponivel",
-          status_timestamp: new Date().toISOString(),
-          planos: [],
-          pef_responsavel_id: null,
+          matricula_status: "ativo",
+          matricula_status_timestamp: new Date().toISOString(),
+          treino: [],
           ritmo: undefined,
           historico: []
         }));
@@ -3668,68 +4575,71 @@ return (
     </div>
   );
 }
-function HistoricoModal({ aluno, onClose }: { aluno: Aluno; onClose: () => void; }) {
-  // Lógica para gerar os últimos 30 dias e mesclar com o histórico real
-  const historicoCompleto = useMemo(() => {
-    const hoje = new Date();
-  const ultimos30dias: HistoricoItem[] = [];
-    
-    for (let i = 0; i < 30; i++) {
-      const dataIteracao = new Date();
-      dataIteracao.setDate(hoje.getDate() - i);
-      
-      const treinoDoDia = aluno.historico?.find(
-        h => new Date(h.data).toDateString() === dataIteracao.toDateString()
-      );
+function HistoricoModal({ 
+  aluno,
+  rows,
+  loading = false,
+  onClose,
+}: {
+  aluno: Aluno | null;
+  rows: HistoricoRow[];
+  loading?: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content historico-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close-btn" onClick={onClose}>&times;</button>
 
-      if (treinoDoDia) {
-        ultimos30dias.push(treinoDoDia);
-      } else {
-        // Se não houve treino, cria um item placeholder
-        ultimos30dias.push({
-          id: dataIteracao.getTime(),
-          data: dataIteracao.toISOString(),
-          planoId: 0,
-          nomePlano: 'Não houve treino',
-          status: 'nao-realizado',
-        });
-      }
-    }
-    return ultimos30dias;
-  }, [aluno.historico]);
+        <div className="modal-header">
+          <h2 className="title-modal">Histórico de Treinos</h2>
+          <p className="subtitle-modal">{aluno?.nome ?? ''}</p>
+        </div>
+        <div className="modal-body">
+          {loading ? (
+            // Se estiver carregando, usamos a classe 'historico-loading' para
+            // centralizar um spinner simples, sem usar o componente de tela cheia.
+            <div className="historico-loading">
+              {spinnerIcon}
+              <p>Carregando histórico...</p>
+            </div>
+          ) : (
+            // Se não estiver carregando, mostra a lista de resultados
+            <ul className="historico-lista">
+              {rows.map((item) => {
+                const dataObj = new Date(item.session_date + 'T00:00:00');
+                const dataFmt = formatarDataHistorico(dataObj);
+                const statusLabel =
+                  item.status === 'completo'
+                    ? 'Completo'
+                    : item.status === 'incompleto'
+                    ? 'Incompleto'
+                    : 'Nao Realizado';
 
-return (
-  <div className="modal-overlay" onClick={onClose}>
-    <div className="modal-content" style={{ textAlign: 'left', maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
-      <button className="modal-close-btn" onClick={onClose}>&times;</button>
-      <div className="modal-header">
-        <h2 className="title-modal">Histórico de Treinos</h2>
-        <p className="subtitle-modal">{aluno.nome}</p>
+                return (
+                  <li key={item.session_date} className="historico-item">
+                    <div className="col-data">{dataFmt}</div>
+                    <div className="col-treino">{item.treino_nome}</div>
+                    <div className="col-status">
+                      <div className="status-line">
+                        <StatusIcon status={item.status} />
+                        <span className="status-text">{statusLabel}</span>
+                      </div>
+                      {item.ritmo && (
+                        <div className={`ritmo-line ${item.ritmo === 'no_ritmo' ? 'ok' : 'late'}`}>
+                          {item.ritmo === 'no_ritmo' ? 'No Ritmo' : 'Atrasado'}
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </div>
-
-      <div className="modal-body">
-        {/* A classe .modal-body agora fornecerá o padding necessário ao redor da lista */}
-        <ul className="historico-lista">
-          {historicoCompleto.map((item: HistoricoItem) => (
-            <li key={item.id} className={`historico-item status--${item.status}`}>
-              <div className="historico-info">
-                <span className="historico-data">{formatarDataHistorico(new Date(item.data))}</span>
-                <span className="historico-plano">{item.nomePlano}</span>
-              </div>
-              <div className="historico-status">
-                <StatusIcon status={item.status} />
-                <span className="historico-status-texto">{item.status.replace('-', ' ')}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Este modal não precisa de uma seção de .modal-actions, então simplesmente a omitimos. */}
-
     </div>
-  </div>
-);
+  );
 }
 const StatusIcon = ({ status }: { status: HistoricoItem['status'] }) => {
   const styles = {
@@ -3752,9 +4662,9 @@ function PefAddModal({
   onSave,
 }: {
   onClose: () => void;
-onSave: (novoPef: NovoPefData) => void;
+  onSave: (novoPef: NovoPefData) => Promise<any | null>;
 }) {
-  // Estado interno para controlar os campos do formulário
+  // ESTADOS INTERNOS DO MODAL (O assistente tem suas próprias ferramentas)
   const [dadosPef, setDadosPef] = useState({
     nome: '',
     cpf: '',
@@ -3762,15 +4672,116 @@ onSave: (novoPef: NovoPefData) => void;
     cref: '',
     is_estagiario: false,
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [isCpfValidating, setIsCpfValidating] = useState(false);
+  const lastCheckedCpf = useRef<string | null>(null);
 
   const handleChange = (campo: keyof typeof dadosPef, valor: string | boolean) => {
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[campo];
+      return newErrors;
+    });
+    if (campo === 'is_estagiario' && valor === true) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.cref;
+        return newErrors;
+      });
+    }
     setDadosPef(dadosAtuais => ({ ...dadosAtuais, [campo]: valor }));
   };
+// Dentro de function PefAddModal(...)
 
-  const handleSaveClick = () => {
-    // Lógica de validação e salvamento virá aqui
-    onSave(dadosPef);
-  };
+const handleCpfBlur = async () => {
+    const currentCpf = dadosPef.cpf.trim();
+
+    // SUGESTÃO 1: A verificação para evitar chamadas duplicadas
+    if (currentCpf.length < 11 || currentCpf === lastCheckedCpf.current) {
+    return;
+  }
+
+  setIsCpfValidating(true);
+  lastCheckedCpf.current = currentCpf; // Armazena o CPF que estamos verificando
+  setApiError(null); // Limpa qualquer erro genérico anterior
+
+  try {
+    const response = await fetch('/api/validate-cpf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cpf: dadosPef.cpf }),
+    });
+
+    const result = await response.json(); // Lê a resposta JSON em todos os casos
+
+    if (!response.ok) {
+      // Se a resposta não for de sucesso, lançamos a mensagem de erro específica que a API nos enviou.
+      // O 'result.error' vem do { error: '...' } que definimos na nossa API.
+      throw new Error(result.error || "Falha na validação do CPF no servidor.");
+    }
+
+    // Se a resposta foi de sucesso, checamos o resultado da validação
+    if (result.exists) {
+      setErrors(prev => ({ ...prev, cpf: 'Este CPF já está cadastrado.' }));
+    } else {
+      // Garante que qualquer erro anterior de CPF seja limpo
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.cpf;
+        return newErrors;
+      });
+    }
+  } catch (error: any) {
+    console.error("Erro ao validar CPF onBlur:", error);
+    // Agora, o erro capturado aqui terá a mensagem específica da API,
+    // então o exibimos no local de erro genérico.
+    setApiError(error.message);
+  } finally {
+    setIsCpfValidating(false);
+  }
+};
+  const handleSaveClick = async () => {
+  setApiError(null);
+  setErrors({}); // Limpa todos os erros de campo antigos
+  const validationErrors = validateNewPefData(dadosPef);
+  
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors);
+    return; // Para a execução se a validação de frontend falhar
+  }
+
+  setIsSubmitting(true);
+  const errorResult = await onSave(dadosPef);
+  setIsSubmitting(false);
+
+  if (errorResult) {
+    // --- LÓGICA ATUALIZADA PARA MÚLTIPLOS ERROS ---
+    if (Array.isArray(errorResult.errors)) {
+      // Se a API retornou um array de erros de campo...
+      const newErrors: Record<string, string> = {};
+      errorResult.errors.forEach((err: { field: string; error: string }) => {
+        newErrors[err.field] = err.error;
+      });
+      // ...preenchemos o estado de erros com todos eles de uma vez.
+      setErrors(newErrors);
+    } else {
+      // Se for um erro genérico (sem o array 'errors'), mostramos no rodapé
+      setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
+    }
+  }
+};
+  const isFormValid = useMemo(() => {
+    // Verifica se os campos de texto obrigatórios estão preenchidos
+    const requiredTextFieldsValid = dadosPef.nome.trim() !== '' && dadosPef.email.trim() !== '' && dadosPef.cpf.trim() !== '';
+    // Verifica a regra condicional do CREF
+    const crefIsValid = dadosPef.is_estagiario || (!dadosPef.is_estagiario && dadosPef.cref.trim() !== '');
+    // O formulário só é válido se não houver NENHUM erro
+    const noValidationErrors = Object.keys(errors).length === 0;
+
+    return requiredTextFieldsValid && crefIsValid && noValidationErrors;
+  }, [dadosPef, errors]);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -3780,70 +4791,127 @@ onSave: (novoPef: NovoPefData) => void;
           <h2 className="title-modal">Adicionar Profissional</h2>
           <p className="subtitle-modal">Insira os dados</p>
         </div>
-      <div className="modal-body">
-        {/* --- CAMPO DE NOME --- */}
-        <div className="input-group">
-          <label htmlFor="pef-add-nome">Nome Completo</label>
-          <input
-            id="pef-add-nome"
-            type="text"
-            value={dadosPef.nome}
-            onChange={(e) => handleChange('nome', e.target.value)}
-            placeholder="Nome do profissional"
-          />
+        <div className="modal-body">
+          {/* Campo de Nome */}
+          <div className="input-group">
+            <label htmlFor="pef-add-nome">Nome Completo</label>
+            <input id="pef-add-nome" type="text" value={dadosPef.nome} onChange={(e) => handleChange('nome', e.target.value)} placeholder="Nome do profissional" className={errors.nome ? 'invalid' : ''} />
+            {errors.nome && <span className="error-message">{errors.nome}</span>}
+          </div>
+                    {/* Campo de CPF */}
+          <div className="input-group">
+            <label htmlFor="pef-add-cpf">CPF</label>
+            <div className="input-with-icon"> {/* Wrapper para posicionar o ícone */}
+              <input 
+                id="pef-add-cpf"
+                type="text"
+                value={dadosPef.cpf}
+                onChange={(e) => handleChange('cpf', e.target.value)}
+                onBlur={handleCpfBlur}
+                placeholder="000.000.000-00"
+                className={errors.cpf ? 'invalid' : ''}
+              />
+              {isCpfValidating && <div className="spinner"></div>} {/* Ícone de loading */}
+            </div>
+            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+          </div>
+          {/* Campo de E-mail */}
+          <div className="input-group">
+            <label htmlFor="pef-add-email">E-mail</label>
+            <input id="pef-add-email" type="email" value={dadosPef.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="email@dominio.com" className={errors.email ? 'invalid' : ''} />
+            {errors.email && <span className="error-message">{errors.email}</span>}
+          </div>
+          {/* Checkbox e Campo de CREF */}
+          <div className="input-group-checkbox">
+            <input id="pef-add-estagiario" type="checkbox" checked={dadosPef.is_estagiario} onChange={(e) => handleChange('is_estagiario', e.target.checked)} />
+            <label htmlFor="pef-add-estagiario">Este profissional é um estagiário</label>
+          </div>
+          <div className="input-group">
+            <label htmlFor="pef-add-cref">CREF</label>
+            <input id="pef-add-cref" type="text" value={dadosPef.cref} onChange={(e) => handleChange('cref', e.target.value)} disabled={dadosPef.is_estagiario} placeholder={dadosPef.is_estagiario ? 'Não aplicável para estagiários' : 'Ex: 012345-G/RJ'} className={errors.cref ? 'invalid' : ''} />
+            {errors.cref && <span className="error-message">{errors.cref}</span>}
+          </div>
         </div>
-
-        {/* --- CAMPO DE E-MAIL (ESSENCIAL PARA O CONVITE) --- */}
-        <div className="input-group">
-          <label htmlFor="pef-add-email">E-mail</label>
-          <input
-            id="pef-add-email"
-            type="email"
-            value={dadosPef.email}
-            onChange={(e) => handleChange('email', e.target.value)}
-            placeholder="email@dominio.com"
-          />
-        </div>
-
-        {/* --- CAMPO DE CPF --- */}
-        <div className="input-group">
-          <label htmlFor="pef-add-cpf">CPF</label>
-          <input
-            id="pef-add-cpf"
-            type="text"
-            value={dadosPef.cpf}
-            onChange={(e) => handleChange('cpf', e.target.value)}
-            placeholder="000.000.000-00"
-          />
-        </div>
-
-        {/* --- TOGGLE DE ESTAGIÁRIO E CAMPO DE CREF --- */}
-        <div className="input-group-checkbox">
-          <input
-            id="pef-add-estagiario"
-            type="checkbox"
-            checked={dadosPef.is_estagiario}
-            onChange={(e) => handleChange('is_estagiario', e.target.checked)}
-          />
-          <label htmlFor="pef-add-estagiario">Este profissional é um estagiário</label>
-        </div>
-        <div className="input-group">
-          <label htmlFor="pef-add-cref">CREF</label>
-          <input
-            id="pef-add-cref"
-            type="text"
-            value={dadosPef.cref}
-            onChange={(e) => handleChange('cref', e.target.value)}
-            disabled={dadosPef.is_estagiario}
-            placeholder={dadosPef.is_estagiario ? 'Não aplicável para estagiários' : 'Ex: 012345-G/RJ'}
-          />
-        </div>
-      </div>
         <div className="modal-actions">
-          <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={handleSaveClick}>Salvar e Enviar Convite</button>
+          {apiError && <p className="api-feedback-error">{apiError}</p>}
+          <div className="button-group">
+            <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleSaveClick}               
+            disabled={!isFormValid || isSubmitting || isCpfValidating}
+            >
+              {isSubmitting ? 'Enviando...' : 'Enviar convite'}
+            </button>
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+function calcularRitmo(
+  startTimeISO: string,
+  finalizados: number,
+  total: number,
+  duracaoMin: number = 60
+): 'no_ritmo' | 'atrasado' {
+
+  // Caso especial: se não há exercícios, não há ritmo a medir.
+  if (total <= 0) {
+    return 'no_ritmo';
+  }
+
+  const start = new Date(startTimeISO);
+  const agora = new Date();
+  let decorridoMin = (agora.getTime() - start.getTime()) / 1000 / 60;
+
+  if (decorridoMin < 0) decorridoMin = 0;
+
+  // REGRA 1: Se o tempo total do treino foi excedido, está sempre "atrasado".
+  if (decorridoMin > duracaoMin) {
+    // Se já finalizou tudo, mas passou do tempo, continua atrasado.
+    if (finalizados >= total) {
+      return 'atrasado';
+    }
+  }
+
+  // REGRA 2: Se finalizou todos os exercícios dentro do tempo, está "no ritmo".
+  if (finalizados >= total) {
+    return 'no_ritmo';
+  }
+
+  // =================================================================
+  // --- LÓGICA DE BLOCOS DE TEMPO (IMPLEMENTAÇÃO DA SUA SUGESTÃO) ---
+  // =================================================================
+  
+  // 1. Calcula o tempo alocado para cada "bloco" de exercício.
+  const tempoPorExercicio = duracaoMin / total;
+
+  // 2. Calcula o tempo limite para o estágio atual do treino.
+  // O aluno tem até o final do PRÓXIMO bloco para estar em dia.
+  const tempoLimite = (finalizados + 1) * tempoPorExercicio;
+
+  // 3. Compara o tempo decorrido com o tempo limite do bloco atual.
+  const ritmo = decorridoMin <= tempoLimite ? 'no_ritmo' : 'atrasado';
+  
+  // Log para depuração
+  console.log('[calcularRitmo por BLOCO]', {
+    finalizados,
+    total,
+    decorridoMin: decorridoMin.toFixed(2),
+    tempoPorExercicio: tempoPorExercicio.toFixed(2),
+    tempoLimite: tempoLimite.toFixed(2),
+    ritmo
+  });
+
+  return ritmo;
+}
+
+// Adicione este novo componente no seu page.tsx
+
+function LoadingSpinner({ message }: { message?: string }) {
+    return (
+    <div className="loading-overlay">
+      {message && <p>{message}</p>}
+      {spinnerIcon}
     </div>
   );
 }

@@ -513,14 +513,32 @@ select {
 /* Container para os botões "Salvar" e "Cancelar" */
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--space-md);
+  flex-direction: column; /* <<< IMPORTANTE: Organiza em coluna */
+  align-items: center; /* Centraliza os itens no eixo cruzado */
+  gap: 1rem; /* Espaço entre a mensagem de erro (se houver) e os botões */
   padding: 1.25rem;
   margin-top: 0; /* <<< ALTERAÇÃO: Resetamos a margem */
   border-top: 1px solid var(--border-color);
   background-color: var(--bg-color); /* Um fundo sutil para diferenciar a área de ações */
   border-radius: 0 0 var(--radius-lg) var(--radius-lg); /* Arredonda os cantos inferiores */
-  padding-top: 1.25rem; /* Convertido para rem */
+  }
+
+  /* NOVO: Estilo para a nossa mensagem de erro da API */
+.api-feedback-error {
+  width: 100%;
+  text-align: center;
+  color: #ff4444; /* Ou a variável de cor de erro do seu tema */
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* NOVO: Container apenas para os botões, para alinhá-los horizontalmente */
+.button-group {
+  display: flex;
+  justify-content: flex-end; /* Alinha os botões à direita */
+  gap: 0.75rem; /* Espaço entre os botões */
+  width: 100%;
 }
 
 /* Botão primário (Salvar) */
@@ -529,9 +547,16 @@ select {
   color: white;
   padding: 10px 20px;
   border-radius: var(--radius-md);
-  border: none;
+  border: 1px solid var(--accent-color-dark);
   font-weight: 600;
   cursor: pointer;
+}
+.btn-primary:disabled {
+  background-color: #e0e0e0; /* Um cinza claro e neutro */
+  color: #a0a0a0;           /* Cor do texto mais clara */
+  cursor: not-allowed;      /* Muda o cursor do mouse para indicar que não é clicável */
+  opacity: 0.7;             /* Deixa o botão semi-transparente */
+  border: none;             /* Garante que não haja bordas inesperadas */
 }
 
 /* Botão secundário (Cancelar) */
@@ -570,6 +595,30 @@ select {
   font-size: 0.95rem; /* Sutilmente menor que o texto padrão */
   margin: 0 0 var(--space-lg) 0; /* Espaçamento padrão abaixo */
   line-height: 1.5; /* Melhora a legibilidade */
+}
+
+.input-with-icon {
+  position: relative;
+  width: 100%;
+}
+
+.spinner {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 3px solid  rgba(0, 0, 0, 0.1);
+  border-top: 3px solid var(--accent-color-dark);
+
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: translateY(-50%) rotate(0deg); }
+  100% { transform: translateY(-50%) rotate(360deg); }
 }
 /* =============================================================== */
 /* SOBRESCRITAS ESPECÍFICAS PARA COMPONENTES DENTRO DO MODAL       */
@@ -1210,7 +1259,7 @@ select {
 /* ARQUIVO: globals.css - Estilos para a Tela de Edição de Plano */
 
 /* 1. Garanta que o container do card seja uma âncora de posicionamento */
-.plano-edit-page .exercise-edit-card {
+.treino-edit-page .exercise-edit-card {
   position: relative;
   background-color: var(--surface-color); /* <<< DEIXA O FUNDO BRANCO */
   border: 1px solid var(--border-color);
@@ -1219,10 +1268,10 @@ select {
   margin-bottom: 1.5rem;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05); /* Adiciona uma sombra sutil */
   animation: fadeIn 0.3s ease-out; /* <<< APLICA A ANIMAÇÃO */
-}
+  }
 /* 2. Ajuste os inputs DENTRO da página de edição */
-.plano-edit-page .input-group input,
-.plano-edit-page .input-group textarea {
+.treino-edit-page .input-group input,
+.treino-edit-page .input-group textarea {
  /* background-color: var(--bg-color); /* <<< DEIXA O FUNDO CINZA CLARO */
   border-color: var(--border-color-darker);
 }
@@ -1248,7 +1297,7 @@ select {
   height: 1rem; /* 16px */
 }
 
-.plano-edit-page .exercise-edit-list {
+.treino-edit-page .exercise-edit-list {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
@@ -1265,7 +1314,7 @@ select {
   padding: 0;
 }
 /* Para remover a linha do último item da lista, deixando o visual mais limpo */
-.plano-edit-page .exercise-edit-list .exercise-edit-card:last-child {
+.treino-edit-page .exercise-edit-list .exercise-edit-card:last-child {
   border-bottom: none;
   padding-bottom: 0;
 }
@@ -1335,7 +1384,7 @@ select {
   flex: 1; /* Faz os 3 campos dividirem o espaço igualmente */
 }
 /* Nova regra para o label "Nome do Plano" */
-.input-group label[for="plano-nome"] {
+.input-group label[for="treino-nome"] {
   font-size: 1.25rem; /* Aumenta o tamanho da fonte */
   font-family: var(--font-montserrat);
   font-weight: 700; /* Deixa em negrito */
@@ -1409,12 +1458,12 @@ select {
 /* ARQUIVO: globals.css - Estilos para as seções do card de edição */
 
 /* Nova regra para as seções internas do card */
-.plano-edit-page.card-section {
+.treino-edit-page.card-section {
   padding: 1.25rem;
 }
 
 /* Adiciona uma linha divisória no topo de cada seção, EXCETO da primeira */
-.plano-edit-page.card-section:not(:first-child) {
+.treino-edit-page.card-section:not(:first-child) {
   border-top: 1px solid var(--border-color);
 }
 
@@ -1558,6 +1607,16 @@ select {
 /* ESTILOS PARA O MODAL DE HISTÓRICO                               */
 /* =============================================================== */
 
+.historico-loading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px; /* Garante que o spinner tenha espaço */
+  gap: 1rem;
+  color: var(--text-secondary);
+}
+
 .historico-lista {
   list-style: none;
   padding: 0;
@@ -1566,14 +1625,44 @@ select {
   overflow-y: auto; /* Adiciona a barra de rolagem vertical se necessário */
 }
 
-.historico-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-md) 0;
-  border-bottom: 1px solid var(--border-color);
-  font-size: 0.9rem;
+.historico-modal {
+  --hm-col1: 50px;
+  --hm-gap: 8px;
+  --hm-font-size: 14px;
 }
+
+.historico-modal .historico-item {
+  display: grid;
+  grid-template-columns: var(--hm-col1) 1fr auto;
+  gap: var(--hm-gap);
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+  font-size: var(--hm-font-size);
+}
+
+.historico-modal .col-data { 
+  color: #475569; 
+  flex: 0 0 var(--col-data-w);                   /* largura fixa */
+  max-width: var(--col-data-w);                  /* garante o limite */
+  white-space: normal;                           /* já está assim no seu CSS */
+}
+
+.historico-modal .col-treino { color: #0f172a; }
+
+.historico-modal .col-status {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.historico-modal .status-line { font-weight: 600; color: #0f172a; text-align: center; }
+.historico-modal .ritmo-line { font-size: 12px; margin-top: 2px; color: #64748b; }
+.historico-modal .ritmo-line.ok { color: #16a34a; }
+.historico-modal .ritmo-line.late { color: #dc2626; }
+
 
 .historico-item:last-child {
   border-bottom: none;
@@ -1583,34 +1672,8 @@ select {
 .historico-item.status--nao-realizado {
   color: var(--text-secondary);
 }
+/*/ Outra seção /*/
 
-.historico-info {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
-}
-
-.historico-data {
-  font-weight: 600;
-  min-width: 90px; /* Garante alinhamento da coluna */
-  text-transform: capitalize;
-}
-
-.historico-plano {
-  font-weight: 500;
-}
-
-.historico-status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.historico-status-texto {
-  min-width: 80px; /* Garante alinhamento */
-}
 
 .suggestion-item {
 /*padding: 8px 12px;*/
@@ -1840,3 +1903,48 @@ background-color: #f0f0f0;
   justify-content: flex-end;
 }
 
+/* ============================================= */
+/* --- CSS PARA O SPINNER DE CARREGAMENTO --- */
+/* ============================================= */
+
+/* O container que preenche a área e centraliza o conteúdo */
+.loading-overlay {
+  top: 0;
+  left: 0;
+  width: 100vw; /* 100% da largura da tela */
+  height: 100vh; /* 100% da altura da tela */
+  display: flex;
+  flex-direction: column;  /* Essencial para empilhar o texto e o spinner */
+  justify-content: center; /* Essencial para centralizar verticalmente */
+  align-items: center;     /* Essencial para centralizar horizontalmente */
+  background-color: var(--bg-color); /* Fundo branco semi-transparente */
+  z-index: 9999; /* Garante que fique por cima de tudo */
+  gap: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.loading-overlay p {
+  font-size: 1.1rem;
+}
+
+/* O SVG do spinner */
+.loading-page-spinner-svg {
+  width: 50px;
+  height: 50px;
+  animation: spinner-spin 1s linear infinite;
+  color: var(--text-secondary); /* Usa a cor primária do seu app */
+}
+
+/* A animação de rotação */
+@keyframes spinner-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+html, body, #__next {
+  height: 100%;
+}

@@ -1,46 +1,55 @@
+// ARQUIVO FINAL E DEFINITIVO: app/api/invite/route.ts
+
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
-  // 1. Recebe TODOS os dados do novo profissional vindos do formulário
-  const { nome, email, cpf, cref, is_estagiario } = await request.json();
+  try {
+    const { nome, email, cpf, cref, is_estagiario } = await request.json();
 
-  if (!email || !nome) {
-    return NextResponse.json({ error: 'Nome e E-mail são obrigatórios.' }, { status: 400 });
-  }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-  // 2. Etapa 1: Convidar o usuário no sistema de autenticação
-  const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
-
-  if (inviteError) {
-    console.error('Erro ao convidar usuário (API):', inviteError);
-    return NextResponse.json({ error: inviteError.message }, { status: 500 });
-  }
-
-  if (inviteData.user) {
-    // 3. Etapa 2: Inserir o perfil na tabela 'profiles'
-    const { error: insertError } = await supabaseAdmin.from('profiles').insert({
-      id: inviteData.user.id, // Usa o ID do usuário recém-criado
-      nome,
-      cpf,
-      cref: is_estagiario ? null : cref,
-      is_estagiario,
-      roles: ['pef'], // Define uma role padrão
-      status: 'ativo'
-    });
-
-    if (insertError) {
-      // Se a inserção do perfil falhar, idealmente deveríamos deletar o usuário convidado
-      // para não deixar lixo no banco. Por ora, retornamos o erro.
-      console.error("Erro ao inserir perfil (API):", insertError);
-      return NextResponse.json({ error: `Usuário convidado, mas falha ao criar perfil: ${insertError.message}` }, { status: 500 });
+    if (!email || !nome || !cpf || (!is_estagiario && !cref)) {
+      return NextResponse.json({ errors: [{ error: 'Dados incompletos.' }] }, { status: 400 });
     }
-  }
 
-  // 4. Retorna sucesso
-  return NextResponse.json({ message: 'Profissional convidado e perfil criado com sucesso!', user: inviteData.user });
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    
+    // --- VALIDAÇÃO PARALELA CORRIGIDA ---
+    const validationErrors = [];
+
+    const checkCpfPromise = supabaseAdmin.from('profiles').select('id').eq('cpf', cpf).single();
+    // Chamamos nossa nova função customizada 'email_exists' via RPC (Remote Procedure Call)
+    const checkEmailPromise = supabaseAdmin.rpc('email_exists', { email_to_check: email });
+
+    const [cpfResult, emailResult] = await Promise.all([checkCpfPromise, checkEmailPromise]);
+
+    if (cpfResult.data) {
+      validationErrors.push({ field: 'cpf', error: 'Este CPF já está cadastrado.' });
+    }
+    if (emailResult.data === true) {
+      validationErrors.push({ field: 'email', error: 'Este e-mail já está em uso.' });
+    }
+    
+    if (validationErrors.length > 0) {
+      return NextResponse.json({ errors: validationErrors }, { status: 409 });
+    }
+    
+    // --- FIM DA VALIDAÇÃO ---
+
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+    if (inviteError || !inviteData.user) { throw new Error(inviteError?.message || 'Falha ao convidar usuário.'); }
+
+    const { error: insertError } = await supabaseAdmin.from('profiles').insert({
+      id: inviteData.user.id, nome, cpf, cref: is_estagiario ? null : cref, is_estagiario, roles: ['pef'], status: 'ativo'
+    });
+    if (insertError) { throw new Error(insertError.message); }
+
+    return NextResponse.json({ message: 'Profissional convidado e perfil criado com sucesso!' });
+
+  } catch (error: any) {
+    console.error("ERRO GERAL NA API:", error);
+    return NextResponse.json({ error: error.message || "Ocorreu um erro inesperado no servidor." }, { status: 500 });
+  }
 }
