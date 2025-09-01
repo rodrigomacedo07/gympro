@@ -34,10 +34,15 @@ export async function POST(request: Request) {
     // Resposta de sucesso (mesmo se 'exists' for false)
     return NextResponse.json({ exists: !!data });
 
-  } catch (error: any) {
-    console.error("Erro inesperado na API /api/validate-cpf:", error);
-    // O 'catch' global garante uma resposta JSON em caso de falhas inesperadas
-    // (ex: falha ao fazer o parse do request.json())
-    return NextResponse.json({ error: error.message || 'Erro inesperado no servidor.' }, { status: 500 });
+} catch (error) { // Removido o tipo 'any'
+  // Verificamos se o que foi capturado é um objeto de Erro padrão
+  if (error instanceof Error) {
+    // Usamos uma mensagem de log específica para esta API
+    console.error("Erro inesperado na API de validação de CPF:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // Se, por algum motivo, não for um Erro, usamos uma mensagem genérica
+  console.error("Erro geral e inesperado na API de validação de CPF:", error);
+  return NextResponse.json({ error: "Ocorreu um erro inesperado no servidor." }, { status: 500 });
+}
 }

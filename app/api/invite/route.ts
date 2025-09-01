@@ -48,8 +48,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ message: 'Profissional convidado e perfil criado com sucesso!' });
 
-  } catch (error: any) {
-    console.error("ERRO GERAL NA API:", error);
-    return NextResponse.json({ error: error.message || "Ocorreu um erro inesperado no servidor." }, { status: 500 });
+} catch (error) { // Removido o tipo 'any'
+  // Verificamos se o que foi capturado é um objeto de Erro padrão
+  if (error instanceof Error) {
+    console.error("ERRO GERAL NA API:", error.message);
+    // Usamos a mensagem do erro que foi lançado
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // Se, por algum motivo, não for um Erro, usamos uma mensagem genérica
+  console.error("ERRO GERAL E INESPERADO NA API:", error);
+  return NextResponse.json({ error: "Ocorreu um erro inesperado no servidor." }, { status: 500 });
+}
 }

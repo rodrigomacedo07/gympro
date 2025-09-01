@@ -37,8 +37,14 @@ export async function POST(request: Request) {
      
     return NextResponse.json({ message: 'Um link de recuperação foi enviado para o e-mail do usuário.' });
     
-  } catch (error: any) {
-      console.error("Erro inesperado na API de reset:", error);
-      return NextResponse.json({ error: 'Ocorreu um erro inesperado no servidor.' }, { status: 500 });
+} catch (error) { // Removendo o tipo 'any'
+  // Verificamos se o erro é uma instância de Error para acessar a propriedade 'message' com segurança
+  if (error instanceof Error) {
+    console.error("Erro inesperado na API de reset:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // Se não for um objeto de Erro, registramos o que quer que seja
+  console.error("Erro inesperado na API de reset:", error);
+  return NextResponse.json({ error: 'Ocorreu um erro inesperado no servidor.' }, { status: 500 });
+}
 }

@@ -125,18 +125,7 @@ type ExercicioParaModal = {
   carga: string | number;
   observacoes: string;
 };
-interface ExercicioDoTreino {
-  exercicio_id: string;
-  series: number;
-  repeticoes: string;
-  carga: string;
-  observacoes: string;
-  ordem: number;
-  exercicios: {  // ← Defina como objeto, não array
-    id: string;
-    nome: string;
-  };
-}
+
 interface ExercicioJoin {
   id: string;
   nome: string;
@@ -233,6 +222,26 @@ type HistoricoRow = {
   status: 'completo' | 'incompleto' | 'nao_realizado';
   ritmo?: 'no_ritmo' | 'atrasado';
 };
+type HistoricoDbRow = {
+  session_date: string;
+  status: 'completo' | 'incompleto' | 'nao_realizado';
+  ritmo_final: 'no_ritmo' | 'atrasado' | null;
+  treinos: { nome: string } | null;
+};
+type SessaoAtivaDbRow = {
+  id: string;
+  aluno_id: string;
+  treino_id: string;
+  pef_responsavel_id?: string | null;
+  start_time: string;
+  exercises: LiveExercise[];
+};
+type TreinoExercicioComNome = TreinoExercicio & {
+  exercicios: {
+    nome: string;
+  } | null; // O exercício pode ser nulo se houver algum problema de dados
+};
+
 
 // Forçando um novo deploy na Verce
 // =======================================================
@@ -240,7 +249,7 @@ type HistoricoRow = {
 // =======================================================
 
 /* --- ÍCONES (SVG) --- */
-const planIcon = (
+const treinoIcon = (
   <svg
     viewBox="-5 -10 110 135"
     xmlns="http://www.w3.org/2000/svg"
@@ -1211,7 +1220,6 @@ async function fetchTreinoComExercicios(treinoId: string) {
 }
 
 async function fetchHistoricoUltimos30(alunoId: string): Promise<HistoricoRow[]> {
-  // --- CORREÇÃO: Voltamos a usar a data local, mas de forma segura ---
   const hoje = new Date();
 
   // Criamos uma data inicial para a query, 29 dias atrás.
@@ -1229,16 +1237,18 @@ async function fetchHistoricoUltimos30(alunoId: string): Promise<HistoricoRow[]>
     .select(`session_date, status, ritmo_final, treino_id, treinos:treino_id(nome)`)
     .eq('aluno_id', alunoId)
     .gte('session_date', minISO)
-    .order('session_date', { ascending: false });
+    .order('session_date', { ascending: false })
+    .overrideTypes<HistoricoDbRow[]>();
 
   if (error) {
     console.error('[historico] erro no select:', error);
     return [];
   }
 
-  const porData = new Map<string, any>(data.map((r: any) => [r.session_date, r]));
+  const porData = new Map<string, HistoricoDbRow>(data.map((r) => [r.session_date, r]));
 
   const rows: HistoricoRow[] = [];
+
 
   for (let i = 0; i < 30; i++) {
     const dt = new Date(hoje);
@@ -1284,21 +1294,7 @@ const fetchAllPefs = async () => {
   return data || [];
 };
 
-/**
- * Busca a biblioteca completa de exercícios.
- */
-const fetchExerciciosBiblioteca = async () => {
-  const { data, error } = await supabase.from('exercicios').select('*');
-  if (error) {
-    console.error('Erro ao buscar Biblioteca de Exercícios:', error);
-    return [];
-  }
-  return data || [];
-};
-
-/**
- * Busca todas as sessões de treino atualmente ativas.
- */
+/** * Busca todas as sessões de treino atualmente ativas.*/
 const fetchActiveSessions = async () => {
   const { data, error } = await supabase.from('sessoes_ativas').select('*');
   if (error) {
@@ -1306,7 +1302,7 @@ const fetchActiveSessions = async () => {
     return [];
   }
 
-  const formattedData = (data ?? []).map((session: any) => ({
+  const formattedData = (data as SessaoAtivaDbRow[] ?? []).map((session: SessaoAtivaDbRow) => ({
     id: session.id,
     alunoId: session.aluno_id,          // normaliza para camelCase
     treinoId: session.treino_id,
@@ -1364,7 +1360,7 @@ const [profile, setProfile] = useState<PEF | null>(null);
 const [alunos, setAlunos] = useState<Aluno[]>([]);
 const [treinadores, setTreinadores] = useState<PEF[]>([]);
 const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
-const [exerciciosBiblioteca, setExerciciosBiblioteca] = useState<Exercicio[]>([]);
+
 
 
 
@@ -1374,18 +1370,15 @@ const [statusFilter, setStatusFilter] = useState("todos");
 const [nameFilter, setNameFilter] = useState("");
 const [pefFilter, setPefFilter] = useState('ativo');
 const [pefSearch, setPefSearch] = useState('')
-const [searchResults, setSearchResults] = useState<{ id: string; nome: string }[]>([]);
 const [isWorkoutLoading, setWorkoutLoading] = useState(false);
 
 /* --- ESTADOS DE UI (Controle de Modais e Menus) --- */
-const [alunoEmEdicao, setAlunoEmEdicao] = useState<Aluno | null>(null);
 const [treinoEmEdicao, setTreinoEmEdicao] = useState<TreinoParaFormulario | null>(null);
 const [pefEmEdicao, setPefEmEdicao] = useState<PEF | null>(null);
 const [openAlunoMenuId, setOpenAlunoMenuId] = useState<string | null>(null);
 const [isHeaderMenuOpen, setHeaderMenuOpen] = useState(false);// Controla a visibilidade do menu de 3 pontos no cabeçalho
 const [isUploadModalOpen, setUploadModalOpen] = useState(false);// Controla a visibilidade do modal de upload de CSV
 const [alunoParaVerHistorico, setAlunoParaVerHistorico] = useState<Aluno | null>(null);
-const [activeTrainingTime, setActiveTrainingTime] = useState<string>('');
 const [historicoOpen, setHistoricoOpen] = useState<{ alunoId: string | null; loading: boolean } | null>(null);
 const [historicoRows, setHistoricoRows] = useState<HistoricoRow[]>([]);
 
@@ -1416,25 +1409,6 @@ useEffect(() => {
 const iniciandoSessaoRef = useRef<string | null>(null);
 
 const finishingRef = useRef(false);
-
-function computeRitmos(sessions: ActiveSession[]) {
-  const map: Record<string, 'no_ritmo' | 'atrasado'> = {};
-  for (const s of sessions) {
-    // --- CORREÇÃO APLICADA AQUI ---
-    // 1. Buscamos o 'total' de exercícios diretamente do plano de treino original.
-    // Esta é a fonte de dados correta e consistente.
-    const total = getTotalExerciciosPlano(s.alunoId, s.treinoId);
-
-    // 2. Se não há um plano de treino válido ou não há hora de início, pulamos o cálculo.
-    if (!total || !s.startTime) continue;
-
-    // 3. O resto da lógica permanece o mesmo, agora com o 'total' correto.
-    const finalizados = s.exercises?.filter(ex => ex.status === 'finalizado').length ?? 0;
-    const ritmo = calcularRitmo(String(s.startTime), finalizados, total);
-    map[String(s.alunoId)] = ritmo;
-  }
-  return map;
-}
 
 const statusById = useMemo(() => {
   // Ajuste: use 'activeSession' que é a variável disponível no Page
@@ -1472,18 +1446,15 @@ const carregarDadosIniciais = useCallback(async () => {
     
     const [
       treinadoresData,
-      bibliotecaData,
       sessoesData,
       alunosData
     ] = await Promise.all([
       fetchAllPefs(),
-      fetchExerciciosBiblioteca(),
       fetchActiveSessions(),
       fetchAllAlunosCompletos()
     ]);
     
     setTreinadores(treinadoresData);
-    setExerciciosBiblioteca(bibliotecaData);
     setActiveSessions(sessoesData);
     setAlunos(alunosData);
     console.log("--- DEBUG: TODOS os dados foram carregados e o estado foi atualizado.");
@@ -1510,9 +1481,18 @@ const getTotalExerciciosPlano = useCallback((alunoId: string, treinoId: string) 
   return treino?.exercicios.length ?? 0;
 }, [alunos]);
 
-// Conta apenas finalizados
-const countFinalizados = (session: ActiveSession) =>
-  session.exercises?.filter(e => e.status === 'finalizado').length ?? 0;
+const computeRitmos = useCallback((sessions: ActiveSession[]) => {
+  const map: Record<string, 'no_ritmo' | 'atrasado'> = {};
+  for (const s of sessions) {
+    const total = getTotalExerciciosPlano(s.alunoId, s.treinoId);
+    if (!total || !s.startTime) continue;
+
+    const finalizados = s.exercises?.filter(ex => ex.status === 'finalizado').length ?? 0;
+    const ritmo = calcularRitmo(String(s.startTime), finalizados, total);
+    map[String(s.alunoId)] = ritmo;
+  }
+  return map;
+}, [getTotalExerciciosPlano]);
 
 // 2) Função única de refresh, com override opcional
 const refreshRitmos = useCallback((reason: string, overrides?: Record<string, ActiveSession>) => {
@@ -1656,17 +1636,17 @@ useEffect(() => {
 
       if (exerciciosError) throw exerciciosError;
 
-      const dadosFormatados: ExercicioDeSessao[] = (exerciciosData ?? []).map((item: any) => ({
-        id: item.id,
-        treino_id: item.treino_id,
-        exercicio_id: item.exercicio_id,
-        ordem: item.ordem,
-        series: item.series,
-        repeticoes: item.repeticoes,
-        carga: item.carga,
-        observacoes: item.observacoes,
-        nome: item.exercicios?.nome || 'Exercício não encontrado',
-      }));
+      const dadosFormatados: ExercicioDeSessao[] = (exerciciosData as TreinoExercicioComNome[] ?? []).map((item: TreinoExercicioComNome) => ({
+            id: item.id,
+            treino_id: item.treino_id,
+            exercicio_id: item.exercicio_id,
+            ordem: item.ordem,
+            series: item.series,
+            repeticoes: item.repeticoes,
+            carga: item.carga,
+            observacoes: item.observacoes,
+            nome: item.exercicios?.nome || 'Exercício não encontrado',
+          }));
 
       setExerciciosDoTreino(dadosFormatados); // 2. Preenche o estado com os dados
 
@@ -1741,9 +1721,15 @@ const onExcluirTreino = useCallback(async (alunoId: string, treinoId: string) =>
             await deleteTreino(treinoId);
             await carregarDadosIniciais();
             alert("Treino excluído com sucesso!");
-        } catch (error) {
-            alert("Ocorreu um erro ao excluir o treino. Tente novamente.");
-        }
+            } catch (error) {
+                console.error("Erro ao excluir o treino:", error);
+                // Adicionamos uma verificação de tipo para segurança
+                if (error instanceof Error) {
+                    alert(`Ocorreu um erro ao excluir o treino: ${error.message}`);
+                } else {
+                    alert("Ocorreu um erro desconhecido ao excluir o treino.");
+                }
+            }
     }
 }, [carregarDadosIniciais]);
 
@@ -1761,16 +1747,20 @@ const onEditarTreino = useCallback(async (treinoId: string) => {
     const treinoCompleto = await fetchTreinoComExercicios(treinoId);
 
     // 2. Carrega os estados de edição com os dados vindos do backend
-    setAlunoEmEdicao(activeAluno); // Se você ainda usa este estado
     setTreinoEmEdicao(treinoCompleto); // Carrega o treino completo no estado de edição
 
     // 3. Navega para a tela de edição
     setView({ type: 'editar_treino', alunoId: activeAluno.id });
 
-  } catch (error) {
-    console.error("Erro ao buscar detalhes do treino para edição:", error);
-    alert("Não foi possível carregar o treino para edição.");
+} catch (error: unknown) { // Usamos 'unknown' para mais segurança
+  console.error("Erro ao buscar detalhes do treino para edição:", error);
+  // Agora usamos a mensagem do erro capturado no alert
+  if (error instanceof Error) {
+    alert(`Não foi possível carregar o treino para edição: ${error.message}`);
+  } else {
+    alert("Não foi possível carregar o treino para edição devido a um erro desconhecido.");
   }
+}
 }, [activeAluno]); // Dependências
 const handleNavigateToWorkout = useCallback((alunoId: string) => {
   // 1. A primeira coisa a fazer é verificar se JÁ EXISTE uma sessão ativa para este aluno.
@@ -1808,8 +1798,8 @@ const handleUpdateExerciseStatus = useCallback(
       : [];
 
     // 2) Atualização tipada como LiveExercise[]
-    const updated: LiveExercise[] = base.some(ex => ex.id === exercicioId)
-      ? base.map<LiveExercise>(ex =>
+    const updated: LiveExercise[] = base.some((ex: LiveExercise) => ex.id === exercicioId)
+      ? base.map<LiveExercise>((ex: LiveExercise) =>
           ex.id === exercicioId
             ? { ...ex, status: newStatus }
             : newStatus === "executando" && ex.status === "executando"
@@ -1843,25 +1833,6 @@ const handleUpdateExerciseStatus = useCallback(
 );
 
 
-const handleDeleteExerciseFromSession = useCallback((alunoId: string, exercicioId: string) => {
-  // Confirmação com o usuário antes de proceder.
-  if (!window.confirm("Tem certeza que deseja remover este exercício do treino de hoje?")) {
-    return; // Interrompe a função se o usuário clicar em "Cancelar".
-  }
-
-const nextSessions = activeSessions.map(session => {
-  if (session.alunoId === alunoId) {
-    const updatedExercises = session.exercises.filter(ex => ex.id !== exercicioId);
-    return { ...session, exercises: updatedExercises };
-  }
-  return session;
-});
-
-setActiveSessions(nextSessions);
-updateRitmos('delete-exercise', nextSessions);
-
-  updateRitmos('delete-exercise');
-}, []);
 const handleBackToDashboard = useCallback(
   () => setView({ type: "dashboard", alunoId: null }),
   []
@@ -1897,17 +1868,19 @@ const handleAddExercicio = useCallback(() => {
   const handleEditExercicio = useCallback((treinoId: string, treinoExercicioId: string) => {
     console.log(`Abrindo modal para editar o exercício ${treinoExercicioId} do treino ${treinoId}`);
 
-    let alunoSource: Aluno | undefined;
-    let treinoSource: Treino | undefined;
-    let treinoExercicioSource: TreinoExercicio | undefined;
-
-    alunoSource = alunos.find(a => a.treino.some(t => t.id === treinoId));
-    if (alunoSource) {
-      treinoSource = alunoSource.treino.find(t => t.id === treinoId);
-      if (treinoSource) {
-        treinoExercicioSource = treinoSource.exercicios.find(ex => ex.id === treinoExercicioId);
-      }
+    const alunoSource = alunos.find(a => a.treino.some(t => t.id === treinoId));
+    if (!alunoSource) {
+      console.error("Aluno não encontrado para editar exercício.");
+      return;
     }
+
+    const treinoSource = alunoSource.treino.find(t => t.id === treinoId);
+    if (!treinoSource) {
+      console.error("Treino não encontrado para editar exercício.");
+      return;
+    }
+
+    const treinoExercicioSource = treinoSource.exercicios.find(ex => ex.id === treinoExercicioId)
 
     // CORREÇÃO: Acessando a propriedade 'exercicio' que agora existe no tipo
     if (!alunoSource || !treinoSource || !treinoExercicioSource || !treinoExercicioSource.exercicio) {
@@ -2022,16 +1995,19 @@ updateRitmos('finalizar-treino', nextSessions);
 setView(prev => ({ ...prev, type: 'dashboard' }));
 
 console.info('[FINISH] concluído com sucesso');
-}
- catch (e: any) {
-    console.error('[FINISH] erro ao finalizar treino', {
-      msg: e?.message, code: e?.code, details: e?.details, hint: e?.hint
-    }, e);
-    alert('Não foi possível finalizar o treino. Veja o console para detalhes.');
-  } finally {
+} catch (e) { // Removido o tipo 'any'
+    console.error('[FINISH] erro ao finalizar treino', e);
+    
+    // Adicionamos uma verificação para extrair a mensagem de forma segura
+    if (e instanceof Error) {
+        alert(`Não foi possível finalizar o treino: ${e.message}`);
+    } else {
+        alert('Não foi possível finalizar o treino. Veja o console para detalhes.');
+    }
+} finally {
     finishingRef.current = false;
   }
-}, [view, supabase, setActiveSessions, setAlunos, updateRitmos, setView, profile]);
+}, [view, setActiveSessions, setAlunos, updateRitmos, setView, profile, getTotalExerciciosPlano]);
 const handleCloseEditModal = useCallback(() => {
   setExercicioEmEdicao(null); // Limpa o estado, o que vai fechar o modal
 }, []); // <-- Array de dependências com 'alunos'
@@ -2079,11 +2055,16 @@ const handleCloseEditModal = useCallback(() => {
       setExercicioEmEdicao(null);
       alert('Exercício atualizado com sucesso!');
 
-    } catch (error) {
-      console.error("Erro ao salvar as alterações do exercício:", error);
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Erro ao salvar as alterações do exercício:", error.message);
+      alert("Não foi possível salvar as alterações. " + error.message);
+    } else {
+      console.error("Erro desconhecido ao salvar as alterações do exercício:", error);
       alert("Não foi possível salvar as alterações. Verifique o console para mais detalhes.");
     }
-  };
+  }
+};
 // Esta função agora recebe o ÍNDICE do exercício a ser removido
 const handleDeleteExercicio = useCallback ((treinoId: string, exercicioId: string)  => {
     // 1. Confirmação com o usuário (boa prática que você já tinha)
@@ -2149,26 +2130,6 @@ const handleExcluirExercicioDoGerenciamento = useCallback(async (treinoId: strin
         alert("Não foi possível excluir o exercício. Tente novamente.");
     }
 }, [alunos]); // Depende do estado 'alunos' para poder atualizá-lo
-// A função agora recebe o ÍNDICE do exercício a ser removido
-const handleRemoverExercicioDoFormulario = useCallback((exercicioIndex: number) => {
-    if (!treinoEmEdicao) return;
-
-    // A lógica de atualização é a mesma da função de deletar
-    setTreinoEmEdicao((treinoAtual) => {
-        if (!treinoAtual) return null;
-
-        // Cria uma nova lista de exercícios, filtrando para remover o item no índice desejado
-        const exerciciosAtualizados = treinoAtual.exercicios.filter(
-            (_, index) => index !== exercicioIndex
-        );
-
-        // Retorna o novo estado do treino com a lista de exercícios atualizada
-        return {
-            ...treinoAtual,
-            exercicios: exerciciosAtualizados,
-        };
-    });
-}, [treinoEmEdicao]);
 // Handler para os campos do próprio treino (ex: nome do treino)
 const handleTreinoInputChange = useCallback((
   campo: keyof Omit<TreinoParaFormulario, 'exercicios'>, valor: string) => {
@@ -2241,7 +2202,6 @@ const handleCriarNovoTreino = useCallback((aluno: Aluno) => {
   setTreinoEmEdicao(novoTreino);
   
   // 3. Guarda o aluno em edição e navega para a tela
-  setAlunoEmEdicao(aluno); // Não se esqueça de guardar o aluno também
   setView({ type: 'editar_treino', alunoId: aluno.id });
 
 }, []); // Dependências podem ser adicionadas se necessário, como setView, etc.
@@ -2312,14 +2272,13 @@ const handleSaveTreino = useCallback(async () => {
     // 3. Limpeza de Estado e Navegação
     const alunoIdParaNavegar = activeAluno.id;
     setTreinoEmEdicao(null);
-    setAlunoEmEdicao(null);
     setView({ type: 'gerenciar_treinos', alunoId: alunoIdParaNavegar });
   } catch (error) {
     alert('Ocorreu um erro ao salvar o treino no banco de dados. Tente novamente.');
     console.error(error);
   }
   
-}, [treinoEmEdicao, activeAluno, profile, setValidationErrors]);
+}, [treinoEmEdicao, activeAluno, profile, setValidationErrors, carregarDadosIniciais]);
 const handleExercicioSelect = useCallback((exercicioIndex: number, suggestion: Exercicio) => { // TIPO CORRIGIDO AQUI
   if (!treinoEmEdicao) return;
 
@@ -2392,7 +2351,7 @@ const handleUpdatePef = useCallback(async (pefAtualizado: PEF) => {
 
     // 2. Se o salvamento no banco for bem-sucedido, atualiza o estado local
     setTreinadores(treinadoresAtuais =>
-      treinadoresAtuais.map(p => (p.id === pefAtualizado.id ? pefAtualizado : p))
+      treinadoresAtuais.map((p: PEF) => (p.id === pefAtualizado.id ? pefAtualizado : p))
     );
     
     setPefEmEdicao(null); // Fecha o modal
@@ -2420,7 +2379,7 @@ const handleTogglePefStatus = useCallback(async (pefId: string, statusAtual: 'at
 
     // 3. Se a atualização no banco for bem-sucedida, atualiza o estado local
     setTreinadores(treinadoresAtuais =>
-      treinadoresAtuais.map(pef => {
+      treinadoresAtuais.map((pef: PEF) => {
         if (pef.id === pefId) {
           return { ...pef, status: novoStatus };
         }
@@ -2450,13 +2409,18 @@ const handleResetPassword = useCallback(async (pef: PEF) => {
 
       alert(result.message);
 
-    } catch (error: any) {
-      console.error("Erro ao resetar senha:", error);
-      alert(`Erro: ${error.message}`);
-    }
+} catch (error) { // Removido o tipo 'any'
+  console.error("Erro ao resetar senha:", error);
+  // Adicionamos a verificação de tipo para segurança
+  if (error instanceof Error) {
+    alert(`Erro: ${error.message}`);
+  } else {
+    alert(`Erro desconhecido ao resetar senha.`);
+  }
+}
   }
 },[]);
-const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<any | null> => {
+const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<Record<string, string> | null> => {
   try {
     const response = await fetch('/api/invite', {
       method: 'POST',
@@ -2464,7 +2428,7 @@ const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<any | 
       body: JSON.stringify(novoPef),
     });
 
-    const result = await response.json();
+    const result: { message?: string; error?: string } = await response.json();
 
     if (!response.ok) {
       throw result; // Lança o corpo do erro (que pode ser { errors: [...] } ou { error: '...' })
@@ -2473,13 +2437,20 @@ const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<any | 
     alert(`Sucesso! ${result.message}`);
     setAddPefModalOpen(false);
     fetchAllPefs();
-    return null;
+    return null; // Retorna null em caso de sucesso
 
-  } catch (error: any) {
+  } catch (error) { // Removido o tipo 'any'
     console.error("Erro capturado para repassar ao modal:", error);
-    return error; // Simplesmente repassa o erro capturado, intacto.
+    
+    // Verificamos se o erro tem a estrutura esperada da nossa API
+    if (error && typeof error === 'object') {
+      return error as Record<string, string>;
+    }
+    
+    // Se não, retornamos um erro genérico
+    return { general: "Ocorreu um erro inesperado." };
   }
-}, [fetchAllPefs, setAddPefModalOpen]);
+}, [setAddPefModalOpen]);
 const handleIniciarSessaoDeTreino = useCallback(
   async (alunoId: string, treinoId?: string) => {
     if (!alunoId) {
@@ -2584,7 +2555,7 @@ return; // evita executar qualquer coisa depois daqui
       iniciandoSessaoRef.current = null;
     }
   },
-  [alunos, router, refreshRitmos, profile]);
+  [refreshRitmos, profile, getTotalExerciciosPlano]);
 const handleAssumirTreino = useCallback(async (sessionId: string) => {
   // Garante que temos o perfil do usuário logado
   if (!profile) return;
@@ -2795,10 +2766,8 @@ const nameMatch =
             onFinishWorkout={handleFinishWorkout}
             onUpdateExercise={(exercicioId, status) => handleUpdateExerciseStatus(activeAluno.id, exercicioId, status)}
             onEditarExercicio={handleEditExercicio}
-            onExcluirExercicio={(exercicioId) => handleDeleteExerciseFromSession(activeAluno.id, exercicioId)}
             exerciciosDoTreino={exerciciosDoTreino}
             treinoAtivo={treinoAtivo}
-            setExerciciosDoTreino={setExerciciosDoTreino}
             exerciciosParaRenderizar={exerciciosParaRenderizar}
             isWorkoutLoading={isWorkoutLoading}
 
@@ -3216,11 +3185,11 @@ const getPefFullNameById = (id: string | null | undefined) => {
     ? `${pef.nome.split(" ")[0]} ${pef.nome.split(" ").slice(-1)[0]}`
     : "PEF não encontrado";
 };
-const statusMatriculaMap = {
+/*const statusMatriculaMap = {
   ativo: "Matrícula Ativa",
   inativo: "Matrícula Inativa",
   trancado: "Matrícula Trancada",
-};
+};*/
 const statusSessaoTexto = "Em Treinamento";
 
 const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -3595,9 +3564,7 @@ function LiveWorkoutView({
   onFinishWorkout,
   onUpdateExercise,
   onEditarExercicio,
-  onExcluirExercicio,
   exerciciosParaRenderizar,
-  setExerciciosDoTreino,
   isWorkoutLoading,
 }: {
   session: ActiveSession;
@@ -3613,9 +3580,7 @@ function LiveWorkoutView({
     status: LiveExercise["status"]
   ) => void;
   onEditarExercicio: (treinoId: string, exercicioId: string) => void;
-  onExcluirExercicio: (exercicioId: string) => void; // assinatura mantida
   exerciciosParaRenderizar: ExercicioComStatus[];
-  setExerciciosDoTreino: React.Dispatch<React.SetStateAction<ExercicioDeSessao[]>>;
   isWorkoutLoading: boolean;
 }) {
 
@@ -3623,51 +3588,6 @@ function LiveWorkoutView({
 return <LoadingSpinner message="Carregando detalhes do treino..." />;
   }
   
-  const [isEditModalOpen, setEditModalOpen] = useState(false);
-  const [exercicioEmEdicao, setExercicioEmEdicao] = useState<ExercicioDeSessao | null>(null);
-
-  const handleOpenEditModal = (exercicio: ExercicioDeSessao) => {
-  setExercicioEmEdicao(exercicio);
-  setEditModalOpen(true);
-};
-
-const handleCloseEditModal = () => {
-  setExercicioEmEdicao(null);
-  setEditModalOpen(false);
-};
-
-const handleSaveExercicio = async (exercicioAtualizado: ExercicioDeSessao) => {
-  try {
-    // 1. Persiste a mudança no Supabase (na tabela treino_exercicios)
-    const { error } = await supabase
-      .from('treino_exercicios')
-      .update({
-        series: exercicioAtualizado.series,
-        repeticoes: exercicioAtualizado.repeticoes,
-        carga: exercicioAtualizado.carga,
-        observacoes: exercicioAtualizado.observacoes,
-      })
-      .eq('id', exercicioAtualizado.id);
-
-    if (error) throw error;
-
-    // 2. Atualiza o estado local para a UI refletir a mudança instantaneamente
-    setExerciciosDoTreino(currentExercicios =>
-      currentExercicios.map(ex =>
-        ex.id === exercicioAtualizado.id ? exercicioAtualizado : ex
-      )
-    );
-    
-    // 3. Fecha o modal
-    handleCloseEditModal();
-    // Opcional: Adicionar um feedback de sucesso (ex: alert('Exercício atualizado!'))
-
-  } catch (error) {
-    console.error("Erro ao salvar o exercício:", error);
-    alert("Não foi possível salvar as alterações no exercício.");
-  }
-};
-
   // Contadores/percentual do header
   const totalExercicios = exerciciosDoTreino.length;
   const finishedCount = session.exercises.filter((ex) => ex.status === "finalizado").length;
@@ -3748,7 +3668,7 @@ console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
                   <button
                     className="btn btn-icon"
                     title="Editar"
-                    onClick={() => handleOpenEditModal(exercicio)}
+                    onClick={() => onEditarExercicio(treinoAtivo!.id, exercicio.id)}
                   >
                     {editIcon}
                   </button>
@@ -3804,13 +3724,6 @@ console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
         </button>
       </div>
     </div>
-    {isEditModalOpen && (
-      <EditExerciseModal
-        exercicio={exercicioEmEdicao}
-        onClose={handleCloseEditModal}
-        onSave={handleSaveExercicio}
-      />
-    )}
     </>
   );
 }
@@ -3935,8 +3848,7 @@ function GerenciarTreinosPage({
               <div key={treino.id} className={`management-plan-accordion plan-status-${planStatus}`}>
                 <button className="accordion-header-manage" onClick={() => toggleExpansion(`treino-${treino.id}`)}>
                   <div className="accordion-title-group">
-                    {/* Substitua planIcon pelo seu SVG real */}
-                    <span><svg viewBox="-5 -10 110 135" width="30" height="30" stroke="currentColor"><path d="M83.789 36.82 77.7382 30.7692 80.1366 28.3708C82.3983 26.1091 82.3983 22.4294 80.1366 20.1716 77.8749 17.9099 74.1952 17.9099 71.9374 20.1716L69.539 22.57 63.4882 16.5192C62.5585 15.5895 61.3085 15.07 59.9882 15.07 58.6679 15.07 57.4179 15.5817 56.4882 16.5192L55.7773 17.2301C55.1171 17.8903 54.6992 18.6989 54.4882 19.5504L54.16 19.2223C53.1288 18.1911 51.7616 17.6325 50.3006 17.6325 48.8397 17.6325 47.4725 18.2028 46.4412 19.2223 45.41 20.2535 44.8514 21.6207 44.8514 23.0817 44.8514 24.5426 45.4217 25.9098 46.4412 26.9411L55.8123 36.3122 36.6323 55.4922 27.2612 46.1211C25.1323 43.9922 21.6714 43.9922 19.5424 46.1211 17.4135 48.25 17.4135 51.7109 19.5424 53.8399L19.8706 54.168C18.9995 54.379 18.1909 54.8087 17.5503 55.4571L16.8393 56.1681C14.9096 58.0978 14.9096 61.2462 16.8393 63.1798L22.8901 69.2306 20.4917 71.629C18.23 73.8907 18.23 77.5704 20.4917 79.8282 21.6206 80.9571 23.1011 81.5274 24.5933 81.5274 26.0816 81.5274 27.5621 80.9688 28.6949 79.8282L31.0933 77.4298 37.1441 83.4806C38.1129 84.4493 39.3746 84.9298 40.6441 84.9298 41.9136 84.9298 43.1832 84.4493 44.1441 83.4806L44.8551 82.7696C45.5152 82.1095 45.9332 81.3008 46.1442 80.4493L46.4723 80.7775C47.5035 81.8087 48.8707 82.3673 50.3317 82.3673 51.7926 82.3673 53.1598 81.797 54.1911 80.7775 55.2223 79.7463 55.7809 78.3791 55.7809 76.9181 55.7809 75.4572 55.2106 74.09 54.1911 73.0587L44.82 63.6876 64 44.5076 73.3711 53.8787C74.4297 54.9373 75.832 55.4803 77.2305 55.4803 78.6289 55.4803 80.0313 54.949 81.0899 53.8787 82.1211 52.8475 82.6797 51.4803 82.6797 50.0193 82.6797 48.5584 82.1094 47.1912 81.0899 46.1599L80.7618 45.8317C81.6329 45.6208 82.4337 45.1911 83.0821 44.5426L83.793 43.8317C84.7227 42.902 85.2422 41.652 85.2422 40.3317 85.2422 39.0114 84.7305 37.7614 83.793 36.8317ZM26.969 78.14C25.6487 79.4603 23.4885 79.4603 22.1682 78.14 20.8479 76.8197 20.8479 74.6595 22.1682 73.3392L24.5666 70.9408 29.3674 75.7416ZM43.141 81.0775 42.4301 81.7884C41.4301 82.7884 39.809 82.7884 38.8207 81.7884L18.5237 61.4914C17.5237 60.4914 17.5237 58.8703 18.5237 57.882L19.2346 57.1711C19.7151 56.6906 20.3557 56.4328 21.0432 56.4328 21.7346 56.4328 22.3713 56.6945 22.8518 57.1711L43.1608 77.4801C44.1608 78.4801 44.1491 80.1012 43.1608 81.0895ZM53.371 76.9213C53.371 77.7416 53.0507 78.5111 52.4804 79.0815 51.9101 79.6518 51.1406 79.9721 50.3202 79.9721 49.4999 79.9721 48.7304 79.6518 48.16 79.0815L21.234 52.1555C20.0426 50.9641 20.0426 49.0266 21.234 47.8274 21.8355 47.2258 22.6129 46.9368 23.3942 46.9368 24.1755 46.9368 24.9645 47.2376 25.5544 47.8274L52.4844 74.7574C53.0547 75.3277 53.375 76.0972 53.375 76.9176ZM62.3007 42.8083 43.1207 61.9883 38.3199 57.1875 57.4999 38.0075ZM79.3787 52.1794C78.1873 53.3708 76.2498 53.3708 75.0506 52.1794L48.1206 25.2494C47.5503 24.6791 47.23 23.9096 47.23 23.0892 47.23 22.2689 47.5503 21.4994 48.1206 20.929 48.6909 20.3587 49.4604 20.0384 50.2808 20.0384 51.1012 20.0384 51.8706 20.3587 52.441 20.929L79.371 47.859C79.9413 48.4293 80.2616 49.1988 80.2616 50.0192 80.2616 50.8395 79.9413 51.609 79.371 52.1794ZM73.6404 21.8594C74.9607 20.5391 77.1209 20.5391 78.4412 21.8594 79.7615 23.1797 79.7615 25.3399 78.4412 26.6602L76.0428 29.0586 71.242 24.2578ZM82.0896 42.1294 81.3787 42.8403C80.8982 43.3208 80.2576 43.5786 79.5701 43.5786 78.8786 43.5786 78.242 43.3169 77.7615 42.8403L57.4605 22.5393C56.4605 21.5393 56.4605 19.9182 57.4605 18.9299L58.1714 18.219C58.6714 17.719 59.3198 17.469 59.98 17.469 60.6402 17.469 61.2886 17.719 61.7886 18.219L82.0856 38.516C82.5661 38.9965 82.8239 39.6371 82.8239 40.3246 82.8239 41.016 82.5622 41.6527 82.0856 42.1332Z" /></svg></span>
+                    <span>{treinoIcon}</span>
                     <h3>{treino.nome}</h3>
                   </div>
                   <span className={`chevron ${expandedItems[`treino-${treino.id}`] ? "expanded" : ""}`}>
@@ -4662,7 +4574,7 @@ function PefAddModal({
   onSave,
 }: {
   onClose: () => void;
-  onSave: (novoPef: NovoPefData) => Promise<any | null>;
+    onSave: (novoPef: NovoPefData) => Promise<Record<string, string> | null>;
 }) {
   // ESTADOS INTERNOS DO MODAL (O assistente tem suas próprias ferramentas)
   const [dadosPef, setDadosPef] = useState({
@@ -4733,12 +4645,17 @@ const handleCpfBlur = async () => {
         return newErrors;
       });
     }
-  } catch (error: any) {
-    console.error("Erro ao validar CPF onBlur:", error);
-    // Agora, o erro capturado aqui terá a mensagem específica da API,
-    // então o exibimos no local de erro genérico.
+} catch (error) { // Removido o tipo 'any'
+  // Verificamos se o erro é uma instância de Error para usar sua mensagem
+  if (error instanceof Error) {
+    console.error("Erro ao validar CPF onBlur:", error.message);
     setApiError(error.message);
-  } finally {
+  } else {
+    // Caso contrário, logamos o erro desconhecido e definimos uma mensagem genérica
+    console.error("Erro desconhecido ao validar CPF onBlur:", error);
+    setApiError("Ocorreu um erro inesperado ao validar o CPF.");
+  }
+} finally {
     setIsCpfValidating(false);
   }
 };
