@@ -845,45 +845,7 @@ const fetchAllAlunosCompletos = async () => {
   return alunosCompletos;
 };
 
-const fetchDashboardAlunos = async () => {
-  // 1. Busca a base de alunos
-  const { data: alunosBase, error: alunosError } = await supabase.from('alunos').select('id, nome, cpf, matricula_status, matricula_status_timestamp, observacao');
-  if (alunosError || !alunosBase) {
-    console.error("Erro ao buscar Alunos:", alunosError);
-    return [];
-  }
 
-  // 2. Hidrata cada aluno com seus treinos e exercícios
-  const alunosCompletos = await Promise.all(
-    alunosBase.map(async (aluno) => {
-      const { data: treinos, error: treinosError } = await supabase
-        .from('treinos')
-        .select('*, treino_exercicios(*, exercicio:exercicios(id, nome))') // Busca aninhada de exercícios
-        .eq('aluno_id', aluno.id)
-        
-
-      if (treinosError) {
-        console.error(`Erro ao buscar treinos para o aluno ${aluno.id}`, treinosError);
-       return {
-        ...aluno,
-        observacao: aluno.observacao || '', // Garante que observacao seja string
-        treino: [],
-        historico: [],
-      };
-      }
-
-      const treinosHidratados = treinos.map(t => ({...t, exercicios: t.treino_exercicios || []}));
-    // 2. Retorna o objeto final do aluno com todas as propriedades, incluindo observacao corrigida
-    return {
-      ...aluno,
-      treino: treinosHidratados,
-      observacao: aluno.observacao || '', // Garante que observacao seja string
-      historico: [], // Assumindo que o histórico também é populado
-    };
-  })
-  );
-  return alunosCompletos;
-};
 
 // =======================================================
 // 4. COMPONENTE PRINCIPAL (PAGE)
@@ -1024,10 +986,6 @@ const carregarDadosIniciais = useCallback(async () => {
       fetchAllAlunosCompletos()
     ]);
 
-    const alunosDataCorrigidos = alunosData.map(aluno => ({
-  ...aluno,
-  observacao: aluno.observacao || '',
-}));
     
     setTreinadores(treinadoresData);
     setActiveSessions(sessoesData);
@@ -2431,61 +2389,7 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
     // Pode parecer redundante, mas garante que nada seja renderizado antes do redirecionamento do useEffect acontecer.
     return null;
   }  
-console.log("RITMOS ATUALIZADOS:", ritmosByAluno);
 
-
-
-   /* ---LÓGICA DE RENDERIZAÇÃO (Estados Derivados)--- */
-const filteredAlunos = masterAlunosList.filter((aluno) => {
-  // 1. Primeiro, determinamos o status REAL do aluno (a sessão ativa tem prioridade)
-  const sessaoAtiva = activeSessions.find(s => s.alunoId === aluno.id);
-  const statusReal = sessaoAtiva ? 'em_treinamento' : 'disponivel';
-
-  // 2. Agora, aplicamos a lógica de filtro de status baseada na sua nova regra
-  let statusMatch = false;
-  if (statusFilter === 'todos') {
-    statusMatch = true;
-  } else if (statusFilter === 'meus_alunos') {
-    // "Meus alunos" SÃO aqueles com uma sessão ativa onde o PEF responsável sou EU.
-    // Usamos '?' (optional chaining) para segurança, caso profile.id não exista.
-    statusMatch = sessaoAtiva?.pef_responsavel_id === profile?.id;
-  } else {
-    // Para outros filtros (ex: "em_treinamento", "ativo"), usamos o status real que calculamos.
-    statusMatch = statusReal === statusFilter;
-  }
-const nameMatch =
-  nameFilter === "" ||
-  normalizeString(aluno.nome).includes(normalizeString(nameFilter));
-
-    return statusMatch && nameMatch;
-})
-  .sort((a, b) => {
-    const ritmoA = ritmosByAluno[a.id];
-    const ritmoB = ritmosByAluno[b.id];
-    const sessionA = activeSessions.find(s => s.alunoId === a.id);
-    const sessionB = activeSessions.find(s => s.alunoId === b.id);
-
-    // REGRA 1: Prioridade máxima para quem está "Atrasado".
-    if (ritmoA === 'atrasado' && ritmoB !== 'atrasado') return -1; // 'a' vem primeiro
-    if (ritmoA !== 'atrasado' && ritmoB === 'atrasado') return 1;  // 'b' vem primeiro
-
-    // Se ambos estão atrasados ou nenhum está, passamos para a próxima regra.
-
-    // REGRA GERAL: Alunos em treinamento sempre vêm antes dos disponíveis.
-    if (sessionA && !sessionB) return -1;
-    if (!sessionA && sessionB) return 1;
-
-    // REGRA 2: Se ambos estão treinando (mas não atrasados), ordena pelo mais antigo (FIFO).
-    if (sessionA && sessionB) {
-      const timeA = new Date(sessionA.startTime).getTime();
-      const timeB = new Date(sessionB.startTime).getTime();
-      return timeA - timeB; // Ordena pelo menor timestamp (o que começou antes)
-    }
-
-    // REGRA 3: Se nenhum está treinando, ou em qualquer outro caso, ordena por nome.
-    return a.nome.localeCompare(b.nome);
-  });
-// --- FIM DO BLOCO DE ORDENAÇÃO ---
   let pageContent;
   if (perfisCarregando || loading) {
     return <LoadingSpinner message="Carregando dados do GymPro..." />;
