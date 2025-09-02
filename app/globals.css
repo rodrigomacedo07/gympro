@@ -558,7 +558,13 @@ select {
   opacity: 0.7;             /* Deixa o botão semi-transparente */
   border: none;             /* Garante que não haja bordas inesperadas */
 }
-
+.btn-disabled-inactivate {
+  background-color: #e0e0e0; /* Um cinza claro e neutro */
+  color: #a0a0a0;           /* Cor do texto mais clara */
+  cursor: not-allowed;      /* Muda o cursor do mouse para indicar que não é clicável */
+  opacity: 0.7;             /* Deixa o botão semi-transparente */
+  border: none;             /* Garante que não haja bordas inesperadas */
+}
 /* Botão secundário (Cancelar) */
 .modal-actions .btn-secondary {
   background-color: var(--bg-color);
