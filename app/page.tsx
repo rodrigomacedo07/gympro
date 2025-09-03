@@ -479,6 +479,15 @@ const validateTreino = (treino: TreinoParaFormulario): { isValid: boolean; error
       if (!ex.exercicio_id) {
         errors[`${prefix}.nome`] = "Selecione um exercício válido da lista de sugestões.";
       }
+   
+      // --- VALIDAÇÃO ADICIONADA ---
+      if (String(ex.series).trim() === '') {
+        errors[`${prefix}.series`] = "Séries é obrigatório.";
+      }
+   
+      if (String(ex.repeticoes).trim() === '') {
+        errors[`${prefix}.repeticoes`] = "Reps é obrigatório.";
+      }
     });
   }
 
@@ -1696,15 +1705,15 @@ const handleSaveExercicio = async (exercicioAtualizado: ExercicioParaModal) => {
 
     try {
       // 1. Atualiza no banco de dados (seu código, já correto)
-      const { error } = await supabase
-        .from('treino_exercicios')
-        .update({
-          series: exercicioAtualizado.series,
-          repeticoes: exercicioAtualizado.repeticoes,
-          carga: exercicioAtualizado.carga,
-          observacoes: exercicioAtualizado.observacoes,
-        })
-        .eq('id', exercicioAtualizado.id);
+const { error } = await supabase
+  .from('treino_exercicios')
+  .update({
+    series: Number(exercicioAtualizado.series),
+    repeticoes: String(exercicioAtualizado.repeticoes),
+    carga: String(exercicioAtualizado.carga || ''),
+    observacoes: String(exercicioAtualizado.observacoes || ''),
+  })
+  .eq('id', exercicioAtualizado.id);
 
       if (error) throw error;
 
@@ -3922,19 +3931,20 @@ function EditExerciseModal<T extends ExercicioEditavel>({
     }
     setEditedExercicio({ ...editedExercicio, [campo]: valor });
   };
-  const handleSaveClick = () => {
-    if (!editedExercicio) return;
+const handleSaveClick = () => {
+  if (!editedExercicio) return;
 
-    // 1. Usamos a função de validação que JÁ EXISTE para exercícios
-    const { isValid, errors: validationErrors } = validateExercicio();
-    // 2. Atualizamos o estado de erros
-    setErrors(validationErrors);
+  // --- VALIDAÇÃO ADICIONADA ---
+  // Verificamos se os campos obrigatórios estão vazios ou contêm apenas espaços
+  if (String(editedExercicio.series).trim() === '' || String(editedExercicio.repeticoes).trim() === '') {
+    alert('Os campos "Séries" e "Repetições" são obrigatórios e não podem estar vazios.');
+    return; // Impede a função de continuar e salvar
+  }
+  // --- FIM DA VALIDAÇÃO ---
 
-    // 3. Se for válido, salvamos
-    if (isValid) {
-      onSave(editedExercicio);
-    }
-  };
+  // O resto da função continua como antes
+  onSave(editedExercicio);
+};
   // 3. Verificação de segurança, como já tínhamos.
   if (!editedExercicio) {
     return null;
