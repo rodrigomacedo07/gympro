@@ -84,6 +84,7 @@ interface TreinoExercicio {
 interface CsvRow {
   Nome?: string; // Coluna obrigatória
   CPF?: string; // Coluna obrigatória
+  Observacao?: string;
   // Adicione outras colunas se necessário
 }
 interface LiveExercise {
@@ -467,6 +468,9 @@ const validateTreino = (treino: TreinoParaFormulario): { isValid: boolean; error
         errors[`${prefix}.nome`] = "Nome do exercício é obrigatório";
       }
       
+        if (treino.status === 'ativo' && (!treino.exercicios || treino.exercicios.length === 0)) {
+        errors.form = "Um treino ativo não pode ficar sem exercícios. Para remover todos, primeiro inative o treino.";
+      }
       // Validação moderna: Garante que um exercício foi selecionado da busca (verificando o exercicio_id)
       if (!ex.exercicio_id) {
         errors[`${prefix}.nome`] = "Selecione um exercício válido da lista de sugestões.";
@@ -900,6 +904,7 @@ const [tempoDeTreino, setTempoDeTreino] = useState("00:00:00");
 const [exerciciosDoTreino, setExerciciosDoTreino] = useState<ExercicioDeSessao[]>([]);
 const [treinoAtivo, setTreinoAtivo] = useState<Treino | null>(null);
 const [ritmosByAluno, setRitmosByAluno] = useState<Record<string, Ritmo>>({});
+const [treinosComHistorico, setTreinosComHistorico] = useState(new Set<string>());
 
     
   /* --- ESTADOS DERIVADOS E Refs --- */
@@ -993,6 +998,17 @@ const carregarDadosIniciais = useCallback(async () => {
     setMasterAlunosList(alunosData);
     console.log("--- DEBUG: TODOS os dados foram carregados e o estado foi atualizado.");
     
+    const { data: historicoData, error: historicoError } = await supabase
+  .from('treino_historico')
+  .select('treino_id');
+
+    if (historicoError) {
+      console.error("Erro ao buscar histórico de treinos:", historicoError);
+    } else {
+      // Cria um Set (conjunto) com os IDs para uma verificação rápida
+      const idsComHistorico = new Set(historicoData.map(h => h.treino_id).filter(Boolean));
+      setTreinosComHistorico(idsComHistorico);
+    }
 
   } catch (error) {
     console.error("--- DEBUG: Falha ao carregar dados iniciais:", error);
@@ -1095,7 +1111,7 @@ const handleCloseHistorico = () => {
 };
 
 // A função que vai chamar a API de cadastro de aluno
-const handleAddAluno = async (novoAluno: NovoAlunoData) => {
+const handleAddAluno = useCallback(async (novoAluno: NovoAlunoData) => {
   try {
     const response = await fetch('/api/alunos', {
       method: 'POST',
@@ -1109,32 +1125,28 @@ const handleAddAluno = async (novoAluno: NovoAlunoData) => {
 
     if (!response.ok) {
       if (result.errors && Array.isArray(result.errors)) {
-        // Mapeia o array de erros para um objeto Record<string, string>
         const newErrors: Record<string, string> = {};
         result.errors.forEach((err: { field: string; error: string }) => {
           newErrors[err.field] = err.error;
         });
         return newErrors;
       } else {
-        // Para erros genéricos, use uma chave padrão como 'apiError'
         return { apiError: result.error || 'Ocorreu um erro inesperado.' };
       }
     }
 
-    // Adiciona o novo aluno à lista
     setMasterAlunosList(prevAlunos => {
       const alunoComId = result.aluno;
       return [...prevAlunos, alunoComId];
     });
     setAddAlunoModalOpen(false);
 
-    // Retorna null para indicar que não houve erro
     return null;
   } catch (error) {
     console.error("Erro ao cadastrar novo aluno:", error);
     return { apiError: 'Falha na comunicação com o servidor.' };
   }
-};
+}, [setMasterAlunosList, setAddAlunoModalOpen]); // <-- DEPENDÊNCIAS ADICIONADAS
 
 // Função para abrir o modal de edição.
 const handleOpenEditAlunoModal = (aluno: Aluno) => {
@@ -1319,8 +1331,6 @@ useEffect(() => {
   };
 
 }, [refreshRitmos, recomputeTimeAgo]);
-// Em page.tsx, substitua o useEffect de filtragem por este:
-
 useEffect(() => {
   // --- LÓGICA PARA A VISÃO DO DASHBOARD ---
   if (viewState.type === 'dashboard') {
@@ -1397,23 +1407,122 @@ useEffect(() => {
 
 
 /* --- HANDLERS E CALLBACKS (useCallback) --- */
-const onExcluirTreino = useCallback(async (alunoId: string, treinoId: string) => {
-    if (confirm("Tem certeza que deseja excluir este treino? Esta ação não pode ser desfeita.")) {
-        try {
-            await deleteTreino(treinoId);
-            await carregarDadosIniciais();
-            alert("Treino excluído com sucesso!");
-            } catch (error) {
-                console.error("Erro ao excluir o treino:", error);
-                // Adicionamos uma verificação de tipo para segurança
-                if (error instanceof Error) {
-                    alert(`Ocorreu um erro ao excluir o treino: ${error.message}`);
-                } else {
-                    alert("Ocorreu um erro desconhecido ao excluir o treino.");
-                }
-            }
+const handleToggleTreinoStatus = useCallback(async (treinoId: string) => {
+  // 1. Encontra o treino específico dentro do estado 'alunos'
+  let treinoAtual;
+  let alunoId: string | undefined;
+
+  for (const aluno of masterAlunosList) {
+    const treinoEncontrado = aluno.treino.find(t => t.id === treinoId);
+    if (treinoEncontrado) {
+      treinoAtual = treinoEncontrado;
+      alunoId = aluno.id;
+      break;
     }
-}, [carregarDadosIniciais]);
+  }
+
+  if (!treinoAtual) {
+    console.error("Treino não encontrado para alterar o status.");
+    return;
+  }
+
+  // 2. Determina o novo status
+  const novoStatus: 'ativo' | 'inativo' = treinoAtual.status === 'ativo' ? 'inativo' : 'ativo';
+
+    if (novoStatus === 'ativo' && treinoAtual.exercicios.length === 0) {
+    alert("Não é possível ativar um treino que não possui exercícios.");
+    return; // Impede a execução do resto do código
+  }
+
+  try {
+    // 3. Atualiza o status no Supabase
+    const { error } = await supabase
+      .from('treinos')
+      .update({ status: novoStatus })
+      .eq('id', treinoId);
+
+    if (error) throw error;
+
+    // 4. Atualiza o estado local para a UI refletir a mudança instantaneamente
+    const novosAlunos = masterAlunosList.map(aluno => {
+      if (aluno.id === alunoId) {
+        return {
+          ...aluno,
+          treino: aluno.treino.map(t =>
+            t.id === treinoId ? { ...t, status: novoStatus } : t
+          ),
+        };
+      }
+      return aluno;
+    });
+    setMasterAlunosList(novosAlunos);
+
+  } catch (error) {
+    console.error("Erro ao alterar o status do treino:", error);
+    alert("Não foi possível alterar o status do treino.");
+  }
+}, [masterAlunosList]); // A função depende do estado 'alunos'
+const onExcluirTreino = useCallback(async (alunoId: string, treinoId: string) => {
+  try {
+    // 1. VERIFICAR SE O TREINO TEM HISTÓRICO USANDO A NOVA FUNÇÃO RPC
+    const { data: foiUtilizado, error: checkError } = await supabase.rpc('treino_foi_utilizado', {
+      p_treino_id: treinoId
+    });
+
+    if (checkError) {
+      throw new Error("Não foi possível verificar o histórico do treino. Tente novamente.");
+    }
+
+    // 2. DEFINIR A MENSAGEM E A AÇÃO COM BASE NO RESULTADO
+    let mensagemConfirmacao: string;
+    let acaoConfirmada: () => Promise<void>; // Função que será executada se o usuário clicar "OK"
+
+    const treinoParaExcluir = masterAlunosList
+      .find(a => a.id === alunoId)
+      ?.treino.find(t => t.id === treinoId);
+
+    if (!treinoParaExcluir) {
+      alert("Erro: Treino não encontrado.");
+      return;
+    }
+
+    if (foiUtilizado) {
+      // CENÁRIO SOFT DELETE (OU BLOQUEIO)
+      if (treinoParaExcluir.status === 'inativo') {
+        alert("Este treino não pode ser excluído permanentemente, pois possui um histórico associado.");
+        return; // Ação bloqueada, encerra a função
+      } else {
+        mensagemConfirmacao = "Este treino possui um histórico. Excluí-lo irá apenas 'inativá-lo' para preservar os registros. Deseja continuar?";
+        // A ação será a mesma de "inativar" o treino
+        acaoConfirmada = () => handleToggleTreinoStatus(treinoId);
+      }
+    } else {
+      // CENÁRIO HARD DELETE
+      mensagemConfirmacao = "Tem certeza que deseja excluir este treino permanentemente? Esta ação não pode ser desfeita.";
+      // A ação será o delete permanente
+      acaoConfirmada = () => deleteTreino(treinoId);
+    }
+
+    // 3. EXIBIR O ALERTA E EXECUTAR A AÇÃO
+    if (window.confirm(mensagemConfirmacao)) {
+      await acaoConfirmada();
+      
+      // 4. ATUALIZAR A INTERFACE
+      // Recarrega todos os dados para garantir que a UI esteja 100% sincronizada
+      await carregarDadosIniciais(); 
+      
+      alert("Operação realizada com sucesso!");
+    }
+
+  } catch (error) {
+    console.error("Erro no processo de exclusão do treino:", error);
+    if (error instanceof Error) {
+      alert(`Ocorreu um erro: ${error.message}`);
+    } else {
+      alert("Ocorreu um erro desconhecido.");
+    }
+  }
+}, [masterAlunosList, carregarDadosIniciais, handleToggleTreinoStatus]); // Adicione as dependências necessárias
 const onEditarTreino = useCallback(async (treinoId: string) => {
   if (!activeAluno) {
     console.error("Erro: Nenhum aluno ativo para editar o treino.");
@@ -1768,6 +1877,15 @@ const { error } = await supabase
 };
 // Esta função agora recebe o ÍNDICE do exercício a ser removido
 const handleDeleteExercicio = useCallback ((treinoId: string, exercicioId: string)  => {
+      if (!treinoEmEdicao) return;
+
+    // --- NOVA VERIFICAÇÃO ADICIONADA ---
+    // Impede a exclusão do último exercício de um treino ativo
+    if (treinoEmEdicao.status === 'ativo' && treinoEmEdicao.exercicios.length === 1) {
+        alert("Não é possível remover o último exercício de um treino ativo. Por favor, inative o treino primeiro se desejar deixá-lo sem exercícios.");
+        return;
+    }
+    // --- FIM DA VERIFICAÇÃO ---
     // 1. Confirmação com o usuário (boa prática que você já tinha)
     if (!confirm("Tem certeza que deseja remover este exercício do treino?")) {
         return;
@@ -1796,7 +1914,20 @@ const handleDeleteExercicio = useCallback ((treinoId: string, exercicioId: strin
 
 }, [treinoEmEdicao]); // A única dependência necessária é o treino em edição
 // Adicione esta nova função dentro do seu componente Page
-const handleExcluirExercicioDoGerenciamento = useCallback(async (treinoId: string, exercicioId: string) => {
+const handleExcluirExercicioDoGerenciamento = useCallback(async (alunoId: string, treinoId: string, exercicioId: string) => {
+   // --- VERIFICAÇÃO DA REGRA DE NEGÓCIO ADICIONADA ---
+    const aluno = masterAlunosList.find(a => a.id === alunoId);
+    const treino = aluno?.treino.find(t => t.id === treinoId);
+
+    // Se o treino for encontrado, estiver ativo e tiver apenas um exercício...
+    if (treino && treino.status === 'ativo' && treino.exercicios.length === 1) {
+        // ...mostra o alerta e bloqueia a ação.
+        alert("Não é possível remover o último exercício de um treino ativo. Por favor, inative o treino primeiro se desejar deixá-lo sem exercícios.");
+        return; 
+    }
+    // --- FIM DA VERIFICAÇÃO ---
+
+    // Se a verificação passar, o fluxo normal de confirmação continua
     if (!confirm("Tem certeza que deseja excluir este exercício permanentemente?")) {
         return;
     }
@@ -1906,15 +2037,43 @@ const handleCriarNovoTreino = useCallback((aluno: Aluno) => {
   setViewState({ type: 'editar_treino', alunoId: aluno.id });
 
 }, []); // Dependências podem ser adicionadas se necessário, como setViewState, etc.
-const handleAlunosImported = useCallback((novosAlunos: Aluno[]) => {
-// Adiciona os novos alunos à lista existente, evitando duplicatas por ID
-setMasterAlunosList(alunosAtuais => {
-  const alunosExistentesIds = new Set(alunosAtuais.map(a => a.id));
-  const alunosFiltrados = novosAlunos.filter(a => !alunosExistentesIds.has(a.id));
-  return [...alunosAtuais, ...alunosFiltrados];
-});
-setUploadModalOpen(false); // Fecha o modal após a importação
-}, []);
+const handleAlunosImported = useCallback(async (novosAlunos: NovoAlunoData[]) => {
+  setUploadModalOpen(false); // Fecha o modal imediatamente
+  
+  const total = novosAlunos.length;
+  let sucessos = 0;
+  const falhas: { nome: string; erro: string }[] = [];
+
+  // Mostra um feedback inicial
+  alert(`Iniciando a importação de ${total} alunos. Você será notificado ao final.`);
+
+  // Itera sobre cada aluno do CSV e tenta salvá-lo usando a API
+  for (const aluno of novosAlunos) {
+const errorResult = await handleAddAluno(aluno);
+if (errorResult) {
+  // Pega a primeira mensagem de erro do objeto, seja qual for a chave.
+  const erroMsg = Object.values(errorResult)[0] || "Erro desconhecido";
+  falhas.push({ nome: aluno.nome, erro: erroMsg });
+} else {
+      sucessos++;
+    }
+  }
+
+  // Monta e exibe o relatório final para o usuário
+  let relatorioFinal = `Importação concluída!\n\n• ${sucessos} de ${total} alunos adicionados com sucesso.`;
+  if (falhas.length > 0) {
+    relatorioFinal += `\n• ${falhas.length} alunos falharam:`;
+    falhas.forEach(falha => {
+      relatorioFinal += `\n  - ${falha.nome}: ${falha.erro}`;
+    });
+  }
+  
+  alert(relatorioFinal);
+
+  // A atualização do estado já acontece dentro de handleAddAluno,
+  // então não precisamos chamar setMasterAlunosList aqui.
+
+}, [handleAddAluno]);
 const handleVerHistorico = useCallback(async (alunoId: string) => {
   // define o aluno mostrado no cabeçalho do modal
   const alunoSelecionado = masterAlunosList.find(a => a.id === alunoId) || null;
@@ -2286,56 +2445,6 @@ const handleAssumirTreino = useCallback(async (sessionId: string) => {
     alert("Não foi possível assumir o treino. Tente novamente.");
   }
 }, [profile, setActiveSessions]); // Adicione setActiveSessions às dependências
-const handleToggleTreinoStatus = useCallback(async (treinoId: string) => {
-  // 1. Encontra o treino específico dentro do estado 'alunos'
-  let treinoAtual;
-  let alunoId: string | undefined;
-
-  for (const aluno of masterAlunosList) {
-    const treinoEncontrado = aluno.treino.find(t => t.id === treinoId);
-    if (treinoEncontrado) {
-      treinoAtual = treinoEncontrado;
-      alunoId = aluno.id;
-      break;
-    }
-  }
-
-  if (!treinoAtual) {
-    console.error("Treino não encontrado para alterar o status.");
-    return;
-  }
-
-  // 2. Determina o novo status
-  const novoStatus: 'ativo' | 'inativo' = treinoAtual.status === 'ativo' ? 'inativo' : 'ativo';
-
-  try {
-    // 3. Atualiza o status no Supabase
-    const { error } = await supabase
-      .from('treinos')
-      .update({ status: novoStatus })
-      .eq('id', treinoId);
-
-    if (error) throw error;
-
-    // 4. Atualiza o estado local para a UI refletir a mudança instantaneamente
-    const novosAlunos = masterAlunosList.map(aluno => {
-      if (aluno.id === alunoId) {
-        return {
-          ...aluno,
-          treino: aluno.treino.map(t =>
-            t.id === treinoId ? { ...t, status: novoStatus } : t
-          ),
-        };
-      }
-      return aluno;
-    });
-    setMasterAlunosList(novosAlunos);
-
-  } catch (error) {
-    console.error("Erro ao alterar o status do treino:", error);
-    alert("Não foi possível alterar o status do treino.");
-  }
-}, [masterAlunosList]); // A função depende do estado 'alunos'
 const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual: 'ativo' | 'inativo') => {
   
   
@@ -2417,6 +2526,7 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
           onCriarTreino={() => handleCriarNovoTreino(activeAluno)}
           onBack={handleBackToDashboard}
           onToggleTreinoStatus={handleToggleTreinoStatus}
+          treinosComHistorico={treinosComHistorico}
         />
       ) : null;
       break;
@@ -2500,16 +2610,6 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                     {/* O menu dropdown, que só aparece se 'isHeaderMenuOpen' for true */}
                     {isHeaderMenuOpen && (
                       <div className="options-menu">
-                      <button
-                          className="menu-item"
-                          onClick={() => {
-                            setUploadModalOpen(true); // Abre o modal
-                            setHeaderMenuOpen(false); // Fecha o menu
-                          }}
-                        >
-                          {/* Opcional: Adicionar um ícone de upload aqui */}
-                          Incluir Aluno via CSV
-                      </button>
                      {profile.roles.includes('admin') && (
                   <>
                     <button
@@ -2531,6 +2631,16 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                     >
                       Gerenciar Perfis
                     </button>
+                                          <button
+                          className="menu-item"
+                          onClick={() => {
+                            setUploadModalOpen(true); // Abre o modal
+                            setHeaderMenuOpen(false); // Fecha o menu
+                          }}
+                        >
+                          {/* Opcional: Adicionar um ícone de upload aqui */}
+                          Incluir Aluno via CSV
+                      </button>
                   </>
                 )}
                   <button
@@ -3425,15 +3535,6 @@ console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
                   >
                     {editIcon}
                   </button>
-                  {/* O botão de excluir foi removido desta tela
-                  <button
-                    className="btn btn-icon btn-delete"
-                    title="Excluir"
-                    onClick={() => onExcluirExercicio(exercicio.exercicio_id)}
-                  >
-                    {deleteIcon}
-                  </button>
-                    */}
                 </div>
               </div>
 
@@ -3541,6 +3642,7 @@ function GerenciarTreinosPage({
   onExcluirTreino,
   onExcluirExercicio,
   onToggleTreinoStatus,
+  treinosComHistorico,
 }: {
   aluno: Aluno;
   activeSession: ActiveSession | null | undefined;
@@ -3550,8 +3652,9 @@ function GerenciarTreinosPage({
   onEditarExercicio: (treinoId: string, exercicioId: string) => void;
   onCriarTreino: () => void;
   onExcluirTreino: (treinoId: string) => void;
-  onExcluirExercicio: (treinoId: string, exercicioId: string) => void;
+  onExcluirExercicio: (alunoId: string, treinoId: string, exercicioId: string) => void;
   onToggleTreinoStatus: (treinoId: string) => void;
+  treinosComHistorico: Set<string>;
 }) {
   const [filtroAtivo, setFiltroAtivo] = useState(true);
   const [expandedItems, setExpandedItems] = useState<{ [key: string]: boolean }>({});
@@ -3597,6 +3700,7 @@ function GerenciarTreinosPage({
                 planStatus = "disponivel";
               }
             }
+            const temHistorico = treinosComHistorico.has(treino.id);
             return (
               <div key={treino.id} className={`management-plan-accordion plan-status-${planStatus}`}>
                 <button className="accordion-header-manage" onClick={() => toggleExpansion(`treino-${treino.id}`)}>
@@ -3633,17 +3737,39 @@ function GerenciarTreinosPage({
 
                   {/* Botão de Ativar/Desativar */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleTreinoStatus(treino.id);
-                    }}
-                    className="btn btn-icon"
-                    title={treino.status === 'ativo' ? "Desativar Treino" : "Ativar Treino"}
+                    onClick={(e) => { e.stopPropagation(); onToggleTreinoStatus(treino.id); }}
+                    className={`btn btn-icon ${
+                    (planStatus === "em-treinamento" || (treino.status === 'inativo' && treino.exercicios.length === 0)) 
+                      ? 'btn-disabled-inactivate' 
+                      : ''
+                    }`}
+                    disabled={planStatus === "em-treinamento" || (treino.status === 'inativo' && treino.exercicios.length === 0)}
+                    title={
+                    (treino.status === 'inativo' && treino.exercicios.length === 0)
+                      ? "Adicione exercícios para poder ativar este treino."
+                      : (planStatus === "em-treinamento" 
+                          ? "Não é possível inativar um treino em andamento." 
+                          : (treino.status === 'ativo' ? "Desativar Treino" : "Ativar Treino"))
+                      }
                   >
                     {treino.status === 'ativo' ? deactivateIcon : activateIcon}
                   </button>
 
-                  <button onClick={(e) => { e.stopPropagation(); onExcluirTreino(treino.id); }} className="btn btn-icon btn-delete" title="Excluir Treino">
+                  {/* Botão de Excluir (MODIFICADO) */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onExcluirTreino(treino.id); }}
+                    className={`btn btn-icon btn-delete ${
+                      (treino.status === 'inativo' && temHistorico) ? 'btn-disabled-inactivate' : ''
+                    }`}
+                    disabled={(treino.status === 'inativo' && temHistorico) || planStatus === "em-treinamento"}
+                    title={
+                      planStatus === "em-treinamento"
+                        ? "Não é possível excluir um treino em andamento."
+                        : (temHistorico
+                            ? "Este treino não pode ser excluído, pois possui um histórico associado."
+                            : "Excluir Treino")
+                    }
+                  >
                     {deleteIcon}
                   </button>
                 </div>
@@ -3671,7 +3797,7 @@ function GerenciarTreinosPage({
                             index={index}
                             exercicio={exercicioParaCard}
                             onEdit={() => onEditarExercicio(treino.id, ex.id)}
-                            onDelete={() => onExcluirExercicio(treino.id, ex.id)}
+                            onDelete={() => onExcluirExercicio(aluno.id, treino.id, ex.id)}
                             isExpanded={!!expandedItems[tempId]}
                             onToggleExpansion={() => toggleExpansion(tempId)}
                             showActions={true}
@@ -4148,7 +4274,7 @@ function CsvUploadModal({
   onImportSuccess
 }: {
   onClose: () => void;
-  onImportSuccess: (novosAlunos: Aluno[]) => void;
+  onImportSuccess: (novosAlunos: NovoAlunoData[]) => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -4169,6 +4295,7 @@ const handleStartImport = () => {
     header: true,
     skipEmptyLines: true,
     delimiter: ";",
+    encoding: "UTF-8",
     transformHeader: header => header.trim(),
     complete: (results: Papa.ParseResult<CsvRow>) => {
       // Validação: Garante que as colunas Nome e CPF existem no arquivo
@@ -4177,21 +4304,14 @@ const handleStartImport = () => {
         return;
       }
 
-      const novosAlunos: Aluno[] = results.data
-        .filter((row): row is { Nome: string; CPF: string } => 
-          !!row.Nome?.trim() && !!row.CPF?.trim() // Ignora linhas sem nome ou sem CPF
-        )
-        .map((row, index) => ({
-          id: String(Date.now() + index),
-          nome: row.Nome.trim(),
-          cpf: row.CPF.trim(), // <<< PROCESSA O NOVO CAMPO CPF
-          matricula_status: "ativo",
-          matricula_status_timestamp: new Date().toISOString(),
-          treino: [],
-          ritmo: undefined,
-          historico: [],
-          observacao: '',
-        }));
+   const novosAlunos: NovoAlunoData[] = results.data
+  // O filter agora usa a interface CsvRow corrigida
+  .filter((row): row is CsvRow => !!row.Nome?.trim() && !!row.CPF?.trim())
+  .map(row => ({
+    nome: row.Nome!.trim(),
+    cpf: row.CPF!.trim(),
+    observacao: row.Observacao?.trim() || '',
+  }));
 
       onImportSuccess(novosAlunos);
     },
@@ -4215,10 +4335,10 @@ return (
 
         <div className="modal-body">
           <p className="modal-intro">
-            Selecione um arquivo .csv com uma coluna chamada <code>Nome</code>.
+            Selecione um arquivo .csv com as colunas <code>Nome</code> e <code>CPF</code>. A coluna <code>Observacao</code> é opcional.
             <br />
-            <a href="/template_insert_aluno.csv" download="template_importacao_alunos.csv" style={{ color: 'var(--primary-action-color)', fontWeight: '600' }}>
-              Baixe um modelo de arquivo aqui.
+            <a href="/template_insert_aluno.csv" download="template_insert_aluno.csv" /* ... */>
+              Baixe o modelo de arquivo atualizado aqui.
             </a>
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', padding: 'var(--space-lg) 0' }}>
@@ -4744,7 +4864,7 @@ function AlunoManagementCard({
           <span>CPF: {aluno.cpf}</span>
           {aluno.observacao && (
             <p className="observacao-text">
-              **Observação:** {aluno.observacao}
+              <strong>Observação:</strong> {aluno.observacao}
             </p>
           )}
         </div>
