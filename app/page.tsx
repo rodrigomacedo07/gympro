@@ -446,14 +446,6 @@ function dedupSessionsByAluno<T extends { alunoId: string; startTime?: string | 
 
   return Array.from(latestByAluno.values());
 }
-const validateExercicio = (): { isValid: boolean; errors: ExercicioError } => {
-  const errors: ExercicioError = {};
-
-  return {
-    isValid: Object.keys(errors).length === 0,
-    errors,
-  };
-};
 const validateTreino = (treino: TreinoParaFormulario): { isValid: boolean; errors: Record<string, string> } => {
   const errors: Record<string, string> = {};
 
