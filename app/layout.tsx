@@ -1,9 +1,11 @@
 // ARQUIVO: app/layout.tsx
-
+"use client";
 
 import "./globals.css"; // ESTA LINHA É A MAIS IMPORTANTE
 import { Inter, Montserrat } from "next/font/google";
 import { AuthProvider } from "./contexts/AuthContext";
+import { UIProvider } from "./contexts/UIContext";
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Configuração das fontes para otimização do Next.js
 const inter = Inter({
@@ -19,23 +21,25 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
-export const metadata = {
-  title: "GymPro",
-  description: "Gestão de Treinamento Inteligente",
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  
+
   return (
-    <html lang="pt-BR"> 
-    <body className={`${inter.variable} ${montserrat.variable}`}>
-      <AuthProvider>
-      {children}
-      </AuthProvider>
+    <html lang="pt-BR">
+      <body className={`${inter.variable} ${montserrat.variable}`}>
+        <ErrorBoundary>      
+          <AuthProvider>  
+            <UIProvider>
+              {children}
+            </UIProvider>
+          </AuthProvider>
+         </ErrorBoundary>     
       </body>
     </html>
   );
 }
+

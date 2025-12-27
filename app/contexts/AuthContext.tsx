@@ -21,7 +21,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  // ESTADO EXPLÍCITO: A fonte da verdade para o nosso fluxo de recuperação
   const [isInRecoveryFlow, setIsInRecoveryFlow] = useState(false);
   
   const router = useRouter();
@@ -32,59 +31,64 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setIsInRecoveryFlow(false);
   };
 
-  useEffect(() => {
-    // 1. Configura o listener que reage a todos os eventos do Supabase
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log(`📣 [onAuthStateChange] Evento: ${event}`);
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+    const signOut = async () => {
+    return await supabase.auth.signOut();
+  };
 
-      // 2. ATIVA NOSSA FLAG: Se o evento for de recuperação, ativamos nosso estado
-      if (event === 'PASSWORD_RECOVERY') {
-        console.log("✅ Fluxo de recuperação ATIVADO.");
-        setIsInRecoveryFlow(true);
-      }
-    });
-
-    // 3. Pega a sessão inicial para evitar a tela de "Carregando..."
+useEffect(() => {
+    // 1. Buscamos a sessão inicial para saber se o usuário já está logado.
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
+      setLoading(false); // Finaliza o carregamento inicial
     });
 
+    // 2. Criamos o "ouvinte" (listener) para eventos de autenticação.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log(`Supabase auth event: ${event}`);
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+
+        // Se o evento for de recuperação de senha, ativamos nosso estado de fluxo
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsInRecoveryFlow(true);
+        }
+      }
+    );
+
+    // 3. Função de limpeza: Quando o componente for desmontado, removemos o "ouvinte".
+    // Isso é crucial para evitar memory leaks.
     return () => {
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
-  }, []);
+  }, []); // O array vazio [] garante que este efeito rode apenas uma vez.
 
  // GUARDA DE ROTA FINAL E COMPLETO
-  useEffect(() => {
+useEffect(() => {
+    // Só executamos a guarda de rotas APÓS o loading inicial terminar.
     if (loading) return;
-    
+
     const publicRoutes = ['/login', '/forgot-password'];
-    const isProtectedRoute = !publicRoutes.includes(pathname) && pathname !== '/auth/callback';
+    // Adicionamos a página de update-password às rotas "não-protegidas" para evitar loop
+    const isProtectedRoute = !publicRoutes.includes(pathname) && pathname !== '/update-password' && pathname !== '/auth/callback';
 
     // REGRA 1: Usuário em recuperação só pode estar em /update-password.
     if (isInRecoveryFlow && pathname !== '/update-password') {
-      console.log('🔒 Guarda 1: Forçando para /update-password.');
       router.replace('/update-password');
       return;
     }
 
-    // REGRA 2 (ADICIONADA): Usuário normal logado não pode estar em páginas públicas ou de update.
-    if (user && !isInRecoveryFlow && (publicRoutes.includes(pathname) || pathname === '/update-password')) {
-        console.log('🔒 Guarda 2: Usuário logado em página inadequada. Redirecionando para a inicial.');
+    // REGRA 2: Usuário logado e fora do fluxo de recuperação não pode acessar páginas públicas.
+    if (user && !isInRecoveryFlow && publicRoutes.includes(pathname)) {
         router.replace('/');
         return;
     }
 
     // REGRA 3: Usuário deslogado não pode acessar rotas protegidas.
     if (!user && isProtectedRoute) {
-      console.log('🔒 Guarda 3: Usuário deslogado em rota protegida. Redirecionando para /login.');
       router.replace('/login');
-      return;
     }
 
   }, [user, isInRecoveryFlow, pathname, loading, router]);
@@ -97,7 +101,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     session,
     loading,
     completeRecoveryFlow, // Expondo a nova função
-    signOut: async () => await supabase.auth.signOut(),
+    signOut,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

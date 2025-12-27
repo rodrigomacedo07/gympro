@@ -25,7 +25,7 @@ export default function LoginPage() {
 
   if (error) {
     // Se o Supabase retornar um erro (ex: senha errada), o mostramos para o usuário.
-    setError("CPF ou senha inválidos."); // Usamos uma mensagem genérica por segurança
+    setError("E-mail ou senha inválidos."); // Usamos uma mensagem genérica por segurança
     console.error("Erro no login:", error.message); // Mostramos o erro real no console para debug
   } else {
     // Se o login for bem-sucedido, o usuário está logado!

@@ -564,7 +564,7 @@ select {
   cursor: not-allowed;      /* Muda o cursor do mouse para indicar que não é clicável */
   opacity: 0.7;             /* Deixa o botão semi-transparente */
   border: none;             /* Garante que não haja bordas inesperadas */
-}
+  }
 /* Botão secundário (Cancelar) */
 .modal-actions .btn-secondary {
   background-color: var(--bg-color);
@@ -605,7 +605,13 @@ select {
 
 .input-with-icon {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-icon input {
   width: 100%;
+  padding-right: 30px; /* Cria espaço para o spinner */
 }
 
 .spinner {
@@ -1953,4 +1959,37 @@ background-color: #f0f0f0;
 
 html, body, #__next {
   height: 100%;
+}
+
+/* =============================================================== */
+/* --- ESTILOS UNIFICADOS PARA BOTÕES DE AÇÃO DESABILITADOS ---    */
+/* =============================================================== */
+
+/* Regra para o botão 'Iniciar' (verde) quando desabilitado */
+.workout-view .btn-exercise-status.start.btn-action-disabled {
+  background-color: #e0e0e0; /* Cinza claro */
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Regra para o botão 'Finalizar' (laranja) quando desabilitado */
+.workout-view .btn-exercise-status.finish.btn-action-disabled {
+  background-color: #e0e0e0; /* Cinza claro */
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Regra para o botão 'Finalizar Treino' (cinza escuro) quando desabilitado */
+.workout-view .btn-finalizar-treino.btn-action-disabled {
+  background-color: #a0a0a0; /* Um cinza um pouco mais escuro */
+  color: #e0e0e0;
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none; /* Remove qualquer efeito de hover */
+  box-shadow: none; /* Remove qualquer sombra de hover */
+}
+
+/* Regra de fallback usando o atributo :disabled para garantir */
+.workout-view button:disabled {
+    cursor: not-allowed;
 }

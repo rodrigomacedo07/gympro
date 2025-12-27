@@ -19,10 +19,11 @@ import { FixedSizeList as List } from 'react-window';
 import { useRouter } from 'next/navigation';
 import { useAuth } from './contexts/AuthContext';
 import supabase from './lib/supabaseClient';
-
-
-/*import debounce from 'lodash.debounce';*/
-
+import { useClickOutside } from './hooks/useClickOutside';
+import { useUI } from '@/app/contexts/UIContext';
+import BackButtonManager from './components/BackButtonManager';
+import ExitConfirmationModal from './components/ExitConfirmationModal';
+import { isValidCPF } from '@/app/utils/validators';
 
 
 
@@ -168,6 +169,7 @@ type ExercicioEditavel = {
 };
 // A interface agora usa um "Tipo Genérico" <T>
 interface EditExerciseModalProps<T extends ExercicioEditavel> {
+  isOpen: boolean;
   exercicio: T | null;
   onClose: () => void;
   onSave: (exercicioAtualizado: T) => void;
@@ -525,6 +527,29 @@ const validateNewAlunoData = (data: NovoAlunoData): Record<string, string> => {
   }
   return errors;
 };
+// Função para validar os dados do formulário de EDIÇÃO de PEF
+const validatePefData = (data: PEF): Record<string, string> => {
+  const errors: Record<string, string> = {};
+
+  // Validação do Nome
+  if (!data.nome?.trim()) {
+    errors.nome = "O nome é obrigatório.";
+  }
+
+  // Validação do CPF
+  if (!data.cpf?.trim()) {
+    errors.cpf = "CPF é obrigatório.";
+  } else if (!isValidCPF(data.cpf)) { 
+    errors.cpf = "O CPF digitado é inválido.";
+  }
+
+  // Validação do CREF
+  if (data.roles?.includes('pef') && !data.is_estagiario && !data.cref?.trim()) {
+    errors.cref = "CREF é obrigatório para PEFs formados.";
+  }
+
+  return errors;
+};
 const validateAlunoData = (data: Aluno): Record<string, string> => {
   const errors: Record<string, string> = {};
   if (!data.nome.trim()) {
@@ -535,6 +560,8 @@ const validateAlunoData = (data: Aluno): Record<string, string> => {
   }
   return errors;
 };
+
+
 // Substitua sua função searchExercicios inteira por esta
 async function searchExercicios(searchTerm: string) {
   // Retorna uma lista vazia se o termo for muito curto
@@ -856,19 +883,17 @@ const fetchAllAlunosCompletos = async () => {
 // 4. COMPONENTE PRINCIPAL (PAGE)
 // =======================================================
 export default function Page() {
+
   /* --- ESTADOS PRINCIPAIS DE DADOS --- */
 const router = useRouter();
 const {user, loading, signOut } = useAuth();
 const [profile, setProfile] = useState<PEF | null>(null);
-
-/*const [alunos, setAlunos] = useState<Aluno[]>([]);*/
-
 const [treinadores, setTreinadores] = useState<PEF[]>([]);
 const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
-
 const [masterAlunosList, setMasterAlunosList] = useState<Aluno[]>([]); // Nossa lista mestra, com TODOS os alunos.
-const [displayedAlunos, setDisplayedAlunos] = useState<Aluno[]>([]); // A lista que será exibida na tela.
 const [viewState, setViewState] = useState<ViewState>({ type: 'dashboard', alunoId: null });
+const [alunos, setAlunos] = useState<Aluno[]>([]);
+
 
 /* --- ESTADOS DE UI (Controle de Visão e Filtros) --- */
 
@@ -883,34 +908,31 @@ const [alunoSearch, setAlunoSearch] = useState('');
 /* --- ESTADOS DE UI (Controle de Modais e Menus) --- */
 const [treinoEmEdicao, setTreinoEmEdicao] = useState<TreinoParaFormulario | null>(null);
 const [pefEmEdicao, setPefEmEdicao] = useState<PEF | null>(null);
-const [openAlunoMenuId, setOpenAlunoMenuId] = useState<string | null>(null);
-const [isHeaderMenuOpen, setHeaderMenuOpen] = useState(false);// Controla a visibilidade do menu de 3 pontos no cabeçalho
-const [isUploadModalOpen, setUploadModalOpen] = useState(false);// Controla a visibilidade do modal de upload de CSV
 const [alunoParaVerHistorico, setAlunoParaVerHistorico] = useState<Aluno | null>(null);
-const [historicoOpen, setHistoricoOpen] = useState<{ alunoId: string | null; loading: boolean } | null>(null);
+const [isHistoricoLoading, setIsHistoricoLoading] = useState<boolean>(false);
 const [historicoRows, setHistoricoRows] = useState<HistoricoRow[]>([]);
-const [isGerenciarTreinoModalOpen, setGerenciarTreinoModalOpen] = useState(false);
 const [exercicioEmEdicao, setExercicioEmEdicao] = useState<ExercicioParaModal | null>(null);
-const [isAddAlunoModalOpen, setAddAlunoModalOpen] = useState(false);
 const [alunoEmEdicao, setAlunoEmEdicao] = useState<Aluno | null>(null)
+const { openOverlay, closeOverlay } = useUI();
+const [activeOverlay, setActiveOverlay] = useState<string | null>(null);
+const [isExitModalOpen, setIsExitModalOpen] = useState(false);// Estado específico para o nosso modal de confirmação de saída
 
 
-const [timeAgoToDisplay, setTimeAgoToDisplay] = useState<Record<string, string>>({});
 const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-const headerMenuRef = useRef<HTMLDivElement>(null);
-const [isAddPefModalOpen, setAddPefModalOpen] = useState(false); 
 const [perfisCarregando, setPerfisCarregando] = useState(true);
 const [tempoDeTreino, setTempoDeTreino] = useState("00:00:00");
 const [exerciciosDoTreino, setExerciciosDoTreino] = useState<ExercicioDeSessao[]>([]);
 const [treinoAtivo, setTreinoAtivo] = useState<Treino | null>(null);
-const [ritmosByAluno, setRitmosByAluno] = useState<Record<string, Ritmo>>({});
 const [treinosComHistorico, setTreinosComHistorico] = useState(new Set<string>());
 
     
   /* --- ESTADOS DERIVADOS E Refs --- */
 const activeAluno = viewState.alunoId ? masterAlunosList.find((a) => a.id === viewState.alunoId) : null;
 const activeSession = activeAluno ? activeSessions.find((s) => s.alunoId === activeAluno.id) : null;
-
+    // Esta função tenta fechar a janela.
+    // Nota: Por razões de segurança, os navegadores podem bloquear isso.
+    // Funciona melhor em cenários de PWA (Progressive Web App).
+const handleAppExit = () => {window.close();};
 const sessionsRef = useRef<ActiveSession[]>([]);
 useEffect(() => {
   sessionsRef.current = activeSessions;
@@ -919,6 +941,8 @@ useEffect(() => {
 const iniciandoSessaoRef = useRef<string | null>(null);
 
 const finishingRef = useRef(false);
+
+const overlayArmedRef = useRef(false);
 
 const statusById = useMemo(() => {
   // Ajuste: use 'activeSession' que é a variável disponível no Page
@@ -944,33 +968,53 @@ const exerciciosParaRenderizar = useMemo(() => {
   return [...exerciciosBase].sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 }, [exerciciosBase]);
 
-const sortedDisplayedAlunos = useMemo(() => {
-  // Criamos uma cópia para não modificar o estado original
-  return [...displayedAlunos].sort((a, b) => {
-    const ritmoA = ritmosByAluno[a.id];
-    const ritmoB = ritmosByAluno[b.id];
-    const sessionA = activeSessions.find(s => s.alunoId === a.id);
-    const sessionB = activeSessions.find(s => s.alunoId === b.id);
 
-    // REGRA 1: Prioridade máxima para quem está "Atrasado".
-    if (ritmoA === 'atrasado' && ritmoB !== 'atrasado') return -1;
-    if (ritmoA !== 'atrasado' && ritmoB === 'atrasado') return 1;
-
-    // REGRA GERAL: Alunos em treinamento sempre vêm antes dos disponíveis.
-    if (sessionA && !sessionB) return -1;
-    if (!sessionA && sessionB) return 1;
-
-    // REGRA 2: Se ambos estão treinando, ordena pelo mais antigo (FIFO).
-    if (sessionA && sessionB) {
-      const timeA = new Date(sessionA.startTime).getTime();
-      const timeB = new Date(sessionB.startTime).getTime();
-      return timeA - timeB;
+const timeAgoToDisplay = useMemo(() => {
+  const novoTimeAgo: Record<string, string> = {};
+  for (const s of activeSessions) {
+    if (s.startTime) {
+      novoTimeAgo[s.alunoId] = calculateTimeAgo(s.startTime);
     }
+  }
+  return novoTimeAgo;
+}, [activeSessions]);
 
-    // REGRA 3: Se nenhum está treinando, ordena por nome.
-    return a.nome.localeCompare(b.nome);
-  });
-}, [displayedAlunos, ritmosByAluno, activeSessions]); // <-- Dependências
+const displayedAlunos = useMemo(() => {
+  if (!masterAlunosList.length) return [];
+  
+  let alunosFiltrados = masterAlunosList;
+  
+  if (viewState.type === 'dashboard') {
+    // Lógica de filtro do dashboard... (exatamente como estava no useEffect)
+    alunosFiltrados = masterAlunosList.filter(aluno => aluno.matricula_status === 'ativo');
+    alunosFiltrados = alunosFiltrados.filter(aluno => {
+      const sessaoAtiva = activeSessions.find(s => s.alunoId === aluno.id);
+      const statusReal = sessaoAtiva ? 'em_treinamento' : 'disponivel';
+      if (statusFilter === 'todos') return true;
+      if (statusFilter === 'meus_alunos') {
+        return sessaoAtiva?.pef_responsavel_id === profile?.id;
+      }
+      return statusReal === statusFilter;
+    });
+    if (nameFilter) {
+      alunosFiltrados = alunosFiltrados.filter(aluno =>
+        normalizeString(aluno.nome).includes(normalizeString(nameFilter))
+      );
+    }
+  } else if (viewState.type === 'gerenciar_alunos') {
+    // Lógica de filtro do gerenciar_alunos... (exatamente como estava no useEffect)
+    if (alunoFilter !== 'todos') {
+      alunosFiltrados = alunosFiltrados.filter(aluno => aluno.matricula_status === alunoFilter);
+    }
+    if (alunoSearch) {
+      alunosFiltrados = alunosFiltrados.filter(aluno =>
+        aluno.nome.toLowerCase().includes(alunoSearch.toLowerCase())
+      );
+    }
+  }
+  
+  return alunosFiltrados;
+}, [masterAlunosList, activeSessions, viewState, profile, statusFilter, nameFilter, alunoFilter, alunoSearch]);
 
 const carregarDadosIniciais = useCallback(async () => {
   setPerfisCarregando(true);
@@ -1017,12 +1061,38 @@ const carregarDadosIniciais = useCallback(async () => {
   }
 }, [user]);
 
-const shallowEqual = (a: Record<string, Ritmo>, b: Record<string, Ritmo>) => {
-  const ak = Object.keys(a), bk = Object.keys(b);
-  if (ak.length !== bk.length) return false;
-  for (const k of ak) if (a[k] !== b[k]) return false;
-  return true;
-};
+const handleOpenOverlay = useCallback((overlayName: string) => {
+  setActiveOverlay(overlayName);
+  if (!overlayArmedRef.current) {
+    overlayArmedRef.current = true;
+    openOverlay(); // "Arma" o sistema de back button
+  }
+}, [openOverlay]);
+
+const handleCloseOverlay = useCallback(() => {
+  setActiveOverlay(null);
+
+  // Só "desarma" o sistema se ele foi armado antes
+  if (overlayArmedRef.current) {
+    overlayArmedRef.current = false;
+    closeOverlay();
+  }
+
+  // A limpeza dos estados continua igual
+  setAlunoEmEdicao(null);
+  setExercicioEmEdicao(null);
+  setPefEmEdicao(null);
+  setAlunoParaVerHistorico(null);
+  setIsHistoricoLoading(false);
+}, [
+    closeOverlay,
+    setActiveOverlay,
+    setAlunoEmEdicao,
+    setExercicioEmEdicao,
+    setPefEmEdicao,
+    setAlunoParaVerHistorico,
+    setIsHistoricoLoading
+]);
 
 // Resolve quantos exercícios o plano tem (fonte “treino_exercicios” – estável)
 const getTotalExerciciosPlano = useCallback((alunoId: string, treinoId: string) => {
@@ -1031,84 +1101,82 @@ const getTotalExerciciosPlano = useCallback((alunoId: string, treinoId: string) 
   return treino?.exercicios.length ?? 0;
 }, [masterAlunosList]);
 
-const computeRitmos = useCallback((sessions: ActiveSession[]) => {
-  const map: Record<string, 'no_ritmo' | 'atrasado'> = {};
-  for (const s of sessions) {
-    const total = getTotalExerciciosPlano(s.alunoId, s.treinoId);
-    if (!total || !s.startTime) continue;
-
-    const finalizados = s.exercises?.filter(ex => ex.status === 'finalizado').length ?? 0;
-    const ritmo = calcularRitmo(String(s.startTime), finalizados, total);
-    map[String(s.alunoId)] = ritmo;
+const ritmosByAluno = useMemo(() => {
+  const novosRitmos: Record<string, Ritmo> = {};
+  for (const s of activeSessions) {
+    const totalExercicios = getTotalExerciciosPlano(s.alunoId, s.treinoId);
+    if (totalExercicios > 0 && s.startTime) {
+      const finalizados = s.exercises?.filter(ex => ex.status === 'finalizado').length ?? 0;
+      novosRitmos[s.alunoId] = calcularRitmo(s.startTime, finalizados, totalExercicios);
+    }
   }
-  return map;
-}, [getTotalExerciciosPlano]);
+  return novosRitmos;
+}, [activeSessions, getTotalExerciciosPlano]);
 
-// 2) Função única de refresh, com override opcional
-const refreshRitmos = useCallback((reason: string, overrides?: Record<string, ActiveSession>) => {
-  setRitmosByAluno(prev => {
-    // GUARD: se não há sessões, mantém o estado anterior (não zera)
-    if (!activeSessions || activeSessions.length === 0) return prev;
+const sortedDisplayedAlunos = useMemo(() => {
+  let alunosParaExibir = masterAlunosList;
 
-    // aplica overrides (se vieram) e calcula com a rotina PÚRA já existente
-    const base: ActiveSession[] = overrides
-      ? activeSessions.map(s => overrides[s.alunoId] ?? s)
-      : activeSessions;
-
-    const next = computeRitmos(base);
-
-    if (!shallowEqual(prev, next)) {
-      console.info('[RITMO] atualização', { reason, next });
-      return next;
+  // --- ETAPA 1: FILTRAGEM (lógica do useEffect que excluímos) ---
+  if (viewState.type === 'dashboard') {
+    alunosParaExibir = masterAlunosList.filter(
+      aluno => aluno.matricula_status === 'ativo'
+    );
+    alunosParaExibir = alunosParaExibir.filter(aluno => {
+      const sessaoAtiva = activeSessions.find(s => s.alunoId === aluno.id);
+      const statusReal = sessaoAtiva ? 'em_treinamento' : 'disponivel';
+      if (statusFilter === 'todos') return true;
+      if (statusFilter === 'meus_alunos') {
+        return sessaoAtiva?.pef_responsavel_id === profile?.id;
+      }
+      return statusReal === statusFilter;
+    });
+    if (nameFilter) {
+      alunosParaExibir = alunosParaExibir.filter(aluno =>
+        normalizeString(aluno.nome).includes(normalizeString(nameFilter))
+      );
     }
-    return prev;
-  });
-}, [activeSessions, computeRitmos]);
-
-const updateRitmos = useCallback((reason: string, override?: ActiveSession[]) => {
-  if (override && override.length) {
-    const map = Object.fromEntries(override.map(s => [String(s.alunoId), s]));
-    refreshRitmos(reason, map);
-  } else {
-    refreshRitmos(reason);
+  } else if (viewState.type === 'gerenciar_alunos') {
+    if (alunoFilter !== 'todos') {
+      alunosParaExibir = alunosParaExibir.filter(
+        aluno => aluno.matricula_status === alunoFilter
+      );
+    }
+    if (alunoSearch) {
+      alunosParaExibir = alunosParaExibir.filter(aluno =>
+        aluno.nome.toLowerCase().includes(alunoSearch.toLowerCase())
+      );
+    }
   }
-}, [refreshRitmos]);
 
-const recomputeTimeAgo = useCallback((reason: string) => {
-  setTimeAgoToDisplay(prev => {
-    const next: Record<string, string> = {};
-    for (const s of activeSessions) {
-      if (!s.startTime) continue;
-      next[String(s.alunoId)] = calculateTimeAgo(String(s.startTime));
+  // --- ETAPA 2: ORDENAÇÃO (lógica do seu useMemo antigo) ---
+  return [...alunosParaExibir].sort((a, b) => {
+    const ritmoA = ritmosByAluno[a.id];
+    const ritmoB = ritmosByAluno[b.id];
+    const sessionA = activeSessions.find(s => s.alunoId === a.id);
+    const sessionB = activeSessions.find(s => s.alunoId === b.id);
+
+    if (ritmoA === 'atrasado' && ritmoB !== 'atrasado') return -1;
+    if (ritmoA !== 'atrasado' && ritmoB === 'atrasado') return 1;
+    if (sessionA && !sessionB) return -1;
+    if (!sessionA && sessionB) return 1;
+    if (sessionA && sessionB) {
+      const timeA = new Date(sessionA.startTime).getTime();
+      const timeB = new Date(sessionB.startTime).getTime();
+      return timeA - timeB;
     }
-
-    // dedupe para evitar re-render desnecessário
-    const pk = Object.keys(prev), nk = Object.keys(next);
-    let changed = pk.length !== nk.length;
-    if (!changed) for (const k of nk) { if (prev[k] !== next[k]) { changed = true; break; } }
-
-    if (changed) {
-      console.log("[TIMEAGO] atualização", { reason, next });
-      return next;
-    } else {
-      console.log("[TIMEAGO] sem mudanças", { reason });
-      return prev;
-    }
+    return a.nome.localeCompare(b.nome);
   });
-}, [activeSessions]);
-
-const refetchActiveSessionsDedup = async () => {
-  const rows = await fetchActiveSessions();            // já normaliza { alunoId, startTime, ... }
-  const unique = dedupSessionsByAluno(rows as ActiveSession[]);
-  setActiveSessions(unique);                           // usa o setter do seu useState
-  return unique;
-};
-
-const handleCloseHistorico = () => {
-  setHistoricoOpen(null);
-  setHistoricoRows([]);
-  setAlunoParaVerHistorico(null);
-};
+}, [
+  masterAlunosList, 
+  activeSessions, 
+  viewState, 
+  profile, 
+  statusFilter, 
+  nameFilter, 
+  alunoFilter, 
+  alunoSearch, 
+  ritmosByAluno
+]);
 
 // A função que vai chamar a API de cadastro de aluno
 const handleAddAluno = useCallback(async (novoAluno: NovoAlunoData) => {
@@ -1139,19 +1207,20 @@ const handleAddAluno = useCallback(async (novoAluno: NovoAlunoData) => {
       const alunoComId = result.aluno;
       return [...prevAlunos, alunoComId];
     });
-    setAddAlunoModalOpen(false);
+    handleCloseOverlay();
 
     return null;
   } catch (error) {
     console.error("Erro ao cadastrar novo aluno:", error);
     return { apiError: 'Falha na comunicação com o servidor.' };
   }
-}, [setMasterAlunosList, setAddAlunoModalOpen]); // <-- DEPENDÊNCIAS ADICIONADAS
+}, [setMasterAlunosList, handleCloseOverlay]); // <-- DEPENDÊNCIAS ADICIONADAS
 
 // Função para abrir o modal de edição.
-const handleOpenEditAlunoModal = (aluno: Aluno) => {
+const handleOpenEditAlunoModal = useCallback((aluno: Aluno) => {
   setAlunoEmEdicao(aluno);
-};
+  handleOpenOverlay('editAluno');
+}, [handleOpenOverlay, setAlunoEmEdicao]);
 
 // Função que será passada para o AlunoEditModal, responsável por salvar os dados.
 const handleSaveEditAluno = async (alunoAtualizado: Aluno) => {
@@ -1186,21 +1255,27 @@ const handleSaveEditAluno = async (alunoAtualizado: Aluno) => {
   }
 };
 
+const headerMenuRef = useClickOutside<HTMLDivElement>(() => {
+  if (activeOverlay === 'headerMenu') {
+    handleCloseOverlay();
+  }
+});
+
+const gerenciarMenuRef = useClickOutside<HTMLDivElement>(() => {
+  if (activeOverlay === 'gerenciarMenu') {
+    handleCloseOverlay();
+  }
+});
+
+
+
+
+
+
+
+
 
   /* --- EFEITOS COLATERAIS (useEffect) --- */
-
-useEffect(() => {
-function handleClickOutside(event: MouseEvent) {
-if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
-setHeaderMenuOpen(false);
-}
-}
-document.addEventListener("mousedown", handleClickOutside);
-return () => {
-document.removeEventListener("mousedown", handleClickOutside);
-};
-
-}, []);
 useEffect(() => {
     console.log("Estado 'alunos' foi atualizado:", masterAlunosList);
 }, [masterAlunosList]);
@@ -1307,103 +1382,131 @@ useEffect(() => {
   return () => clearInterval(timerId);
 }, [activeSession, viewState.type]); // Depende da sessão e da view
 useEffect(() => {
-  // Este ticker agora roda continuamente em segundo plano,
-  // atualizando tanto o ritmo quanto o tempo "há xxx".
-  
-  // Ticker de 15 segundos para o ritmo
-  refreshRitmos('initial-load');
-  recomputeTimeAgo('initial-load');
+  // Guarda de Segurança: Se não há um usuário logado, não faz nada.
+  if (!user) {
+    return;
+  }
 
+  console.log('[Realtime] Usuário autenticado. Configurando listener...');
+  let debounceTimer: NodeJS.Timeout | null = null;
 
-  // Em seguida, agendamos as atualizações contínuas (tickers).
-  const ritmoIntervalId = setInterval(() => {
-    refreshRitmos('interval/15s');
-  }, 15000);
-
-  const timeAgoIntervalId = setInterval(() => {
-    recomputeTimeAgo('interval/60s');
-  }, 60000);
-
-  // Limpa os dois intervalos quando o componente é desmontado
-  return () => {
-    clearInterval(ritmoIntervalId);
-    clearInterval(timeAgoIntervalId);
-  };
-
-}, [refreshRitmos, recomputeTimeAgo]);
-useEffect(() => {
-  // --- LÓGICA PARA A VISÃO DO DASHBOARD ---
-  if (viewState.type === 'dashboard') {
-    // Começa com a lista completa
-    let alunosFiltrados = masterAlunosList;
-
-    // REGRA DO DASHBOARD: Mostrar APENAS alunos com matrícula ativa
-    alunosFiltrados = alunosFiltrados.filter(
-      aluno => aluno.matricula_status === 'ativo'
-    );
-
-    // Aplica o filtro dos botões de status (em_treinamento, meus_alunos, etc.)
-    alunosFiltrados = alunosFiltrados.filter(aluno => {
-      const sessaoAtiva = activeSessions.find(s => s.alunoId === aluno.id);
-      const statusReal = sessaoAtiva ? 'em_treinamento' : 'disponivel';
-
-      if (statusFilter === 'todos') return true;
-      if (statusFilter === 'meus_alunos') {
-        return sessaoAtiva?.pef_responsavel_id === profile?.id;
+  const channel = supabase
+    .channel(`sessoes-ativas:${user.id}`) // Canal único para evitar conflitos
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'sessoes_ativas' },
+      (payload) => {
+        console.log('%c[Realtime] Mensagem recebida!', 'color: limegreen;', payload);
+        
+        if (debounceTimer) clearTimeout(debounceTimer);
+        
+        debounceTimer = setTimeout(() => {
+          // A única ação do listener é buscar os dados mais recentes.
+          fetchActiveSessions().then(rows => {
+            setActiveSessions(rows);
+          });
+        }, 150); // Debounce de 150ms para agrupar eventos
       }
-      return statusReal === statusFilter;
+    )
+    .subscribe((status, err) => {
+      if (status === 'SUBSCRIBED') {
+        console.log(`[Realtime] Conectado e escutando com sucesso!`);
+      }
+      if (err) {
+        console.error('[Realtime] Erro na inscrição:', err);
+      }
     });
 
-    // Aplica o filtro de busca por nome
-    if (nameFilter) {
-      alunosFiltrados = alunosFiltrados.filter(aluno =>
-        normalizeString(aluno.nome).includes(normalizeString(nameFilter))
-      );
-    }
-    
-    setDisplayedAlunos(alunosFiltrados);
-  } 
-  
-  // --- LÓGICA PARA A VISÃO DE GERENCIAR ALUNOS ---
-  else if (viewState.type === 'gerenciar_alunos') {
-    let alunosParaGerenciar = masterAlunosList; // Começa com a lista COMPLETA
+  // Função de limpeza: Roda quando o 'user' muda (ex: logout)
+  return () => {
+    console.log('[Realtime] Limpando listener do canal anterior.');
+    if (debounceTimer) clearTimeout(debounceTimer);
+    supabase.removeChannel(channel);
+  };
+}, [user, setActiveSessions]); // Depende do 'user' para ser resiliente
+useEffect(() => {
+  console.log('%cMUDANÇA DE ESTADO DETECTADA:', 'color: orange; font-weight: bold;', {
+    activeOverlay: activeOverlay,
+    exercicioEmEdicao: exercicioEmEdicao
+  });
+}, [activeOverlay, exercicioEmEdicao]);
 
-    // Aplica o filtro dos botões (ativo/inativo/todos)
-    if (alunoFilter !== 'todos') {
-      alunosParaGerenciar = alunosParaGerenciar.filter(
-        aluno => aluno.matricula_status === alunoFilter
-      );
-    }
 
-    // Aplica o filtro de busca por nome
-    if (alunoSearch) {
-      alunosParaGerenciar = alunosParaGerenciar.filter(aluno =>
-        aluno.nome.toLowerCase().includes(alunoSearch.toLowerCase())
-      );
-    }
-    
-    setDisplayedAlunos(alunosParaGerenciar);
-  }
 
-  // --- LÓGICA PADRÃO PARA TODAS AS OUTRAS TELAS ---
-  else {
-    // Para qualquer outra tela (workout, editar_treino, etc.),
-    // garantimos que a lista exibida seja a lista mestra completa.
-    setDisplayedAlunos(masterAlunosList);
-  }
-  
-}, [
-  masterAlunosList, 
-  viewState, 
-  activeSessions,
-  profile,
-  // Filtros do Dashboard
-  statusFilter, 
-  nameFilter, 
-  // Filtros de Gerenciamento
-  alunoFilter, 
-  alunoSearch
-]);
+// useEffect para escutar mudanças nas sessões ativas (UPDATE e DELETE)
+  useEffect(() => {
+    const channel = supabase.channel('sessoes_ativas_changes');
+
+    channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'sessoes_ativas' },
+      (payload) => {
+        console.log('REALTIME: Evento de sessão ativa:', payload);
+
+        // CASO 1: A sessão foi ATUALIZADA (ex: outro PEF assumiu)
+        if (payload.eventType === 'UPDATE') {
+          const sessaoAtualizada = payload.new as ActiveSession;
+          setActiveSessions(sessoesAtuais =>
+            sessoesAtuais.map(sessao =>
+              sessao.id === sessaoAtualizada.id ? sessaoAtualizada : sessao
+            )
+          );
+        }
+
+        // CASO 2: A sessão foi DELETADA (treino finalizado)
+        if (payload.eventType === 'DELETE') {
+          const sessaoAntiga = payload.old as Partial<ActiveSession>;
+          setActiveSessions(sessoesAtuais =>
+            sessoesAtuais.filter(sessao => sessao.id !== sessaoAntiga.id)
+          );
+        }
+      }
+    ).subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, setActiveSessions]);
+
+
+// useEffect para escutar mudanças nos exercícios de um treino
+  useEffect(() => {
+    const channel = supabase.channel('treino_exercicios_changes');
+
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'treino_exercicios' },
+      (payload) => {
+        console.log('REALTIME: Recebida atualização de exercício:', payload);
+        const exercicioAtualizado = payload.new as TreinoExercicio;
+
+        setAlunos((alunosAtuais: Aluno[]) => // <<< TIPO ADICIONADO
+          alunosAtuais.map((aluno: Aluno) => { // <<< TIPO ADICIONADO
+            const treinoIndex = aluno.treino.findIndex((t: Treino) => t.id === exercicioAtualizado.treino_id); // <<< TIPO ADICIONADO
+            
+            if (treinoIndex === -1) return aluno;
+
+            const exercicioIndex = aluno.treino[treinoIndex].exercicios.findIndex((ex: TreinoExercicio) => ex.id === exercicioAtualizado.id); // <<< TIPO ADICIONADO
+
+            if (exercicioIndex === -1) return aluno;
+
+            const alunoModificado = JSON.parse(JSON.stringify(aluno));
+            alunoModificado.treino[treinoIndex].exercicios[exercicioIndex] = {
+              ...alunoModificado.treino[treinoIndex].exercicios[exercicioIndex],
+              ...exercicioAtualizado
+            };
+            return alunoModificado;
+          })
+        );
+      }
+    ).subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, setAlunos]);
+
+
 
 
 /* --- HANDLERS E CALLBACKS (useCallback) --- */
@@ -1575,50 +1678,6 @@ const handleNavigateToWorkout = useCallback((alunoId: string) => {
     alert("Este aluno não possui um treino ativo para iniciar.");
   }
 }, [masterAlunosList, activeSessions, setViewState]); // <-- MUDANÇA: Adicionar 'activeSessions' e 'setViewState' às dependências
-const handleUpdateExerciseStatus = useCallback(
-  async (alunoId: string, exercicioId: string, newStatus: LiveExercise["status"]) => {
-    const session = activeSessions.find(s => s.alunoId === alunoId);
-    if (!session) return;
-
-    // 1) Base tipada corretamente
-    const base: LiveExercise[] = Array.isArray(session.exercises)
-      ? (session.exercises as LiveExercise[])
-      : [];
-
-    // 2) Atualização tipada como LiveExercise[]
-    const updated: LiveExercise[] = base.some((ex: LiveExercise) => ex.id === exercicioId)
-      ? base.map<LiveExercise>((ex: LiveExercise) =>
-          ex.id === exercicioId
-            ? { ...ex, status: newStatus }
-            : newStatus === "executando" && ex.status === "executando"
-              ? { ...ex, status: "nao-iniciado" as const }
-              : ex
-        )
-      : [...base, { id: exercicioId, status: newStatus }];
-
-    // 3) Persistir no DB
-    const { error } = await supabase
-      .from("sessoes_ativas")
-      .update({ exercises: updated })
-      .eq("id", session.id);
-
-    if (error) {
-      console.error(error);
-      alert("Não foi possível atualizar o exercício.");
-      return;
-    }
-
-    // 4) Espelhar na UI: array tipado como ActiveSession[]
-    const nextSessions: ActiveSession[] = activeSessions.map(s =>
-      s.id === session.id ? { ...s, exercises: updated } : s
-    );
-    setActiveSessions(nextSessions);
-
-    // 5) Recalcular ritmos
-    updateRitmos("update-exercise-status", nextSessions);
-  },
-  [activeSessions, updateRitmos]
-);
 const handleBackToDashboard = useCallback(
   () => setViewState({ type: "dashboard", alunoId: null }),
   []
@@ -1651,44 +1710,43 @@ const handleAddExercicio = useCallback(() => {
   });
 }, [treinoEmEdicao]);
 // Função para ABRIR o modal de edição
-  const handleEditExercicio = useCallback((treinoId: string, treinoExercicioId: string) => {
-    console.log(`Abrindo modal para editar o exercício ${treinoExercicioId} do treino ${treinoId}`);
+const handleEditExercicio = useCallback((treinoId: string, treinoExercicioId: string) => {
+  console.log(`Abrindo modal para editar o exercício ${treinoExercicioId} do treino ${treinoId}`);
 
-    const alunoSource = masterAlunosList.find(a => a.treino.some(t => t.id === treinoId));
-    if (!alunoSource) {
-      console.error("Aluno não encontrado para editar exercício.");
-      return;
-    }
+  const alunoSource = masterAlunosList.find(a => a.treino.some(t => t.id === treinoId));
+  if (!alunoSource) {
+    console.error("Aluno não encontrado para editar exercício.");
+    return;
+  }
 
-    const treinoSource = alunoSource.treino.find(t => t.id === treinoId);
-    if (!treinoSource) {
-      console.error("Treino não encontrado para editar exercício.");
-      return;
-    }
+  const treinoSource = alunoSource.treino.find(t => t.id === treinoId);
+  if (!treinoSource) {
+    console.error("Treino não encontrado para editar exercício.");
+    return;
+  }
 
-    const treinoExercicioSource = treinoSource.exercicios.find(ex => ex.id === treinoExercicioId)
+  const treinoExercicioSource = treinoSource.exercicios.find(ex => ex.id === treinoExercicioId)
+  // CORREÇÃO: Acessando a propriedade 'exercicio' que agora existe no tipo
+  if (!alunoSource || !treinoSource || !treinoExercicioSource || !treinoExercicioSource.exercicio) {
+    console.error(`FALHA AO ABRIR MODAL: Não foi possível encontrar todos os dados para o exercício ID: ${treinoExercicioId}`);
+    alert("Ocorreu um erro ao tentar editar o exercício. Tente recarregar a página.");
+    return;
+  }
 
-    // CORREÇÃO: Acessando a propriedade 'exercicio' que agora existe no tipo
-    if (!alunoSource || !treinoSource || !treinoExercicioSource || !treinoExercicioSource.exercicio) {
-      console.error(`FALHA AO ABRIR MODAL: Não foi possível encontrar todos os dados para o exercício ID: ${treinoExercicioId}`);
-      alert("Ocorreu um erro ao tentar editar o exercício. Tente recarregar a página.");
-      return;
-    }
+  const exercicioParaModal: ExercicioParaModal = {
+    id: treinoExercicioSource.id,
+    exercicio_id: treinoExercicioSource.exercicio_id,
+    nome: treinoExercicioSource.exercicio.nome, // CORREÇÃO: Acessando a propriedade aninhada
+    series: treinoExercicioSource.series,
+    repeticoes: treinoExercicioSource.repeticoes,
+    carga: treinoExercicioSource.carga,
+    observacoes: treinoExercicioSource.observacoes || "",
+  };
 
-    const exercicioParaModal: ExercicioParaModal = {
-      id: treinoExercicioSource.id,
-      exercicio_id: treinoExercicioSource.exercicio_id,
-      nome: treinoExercicioSource.exercicio.nome, // CORREÇÃO: Acessando a propriedade aninhada
-      series: treinoExercicioSource.series,
-      repeticoes: treinoExercicioSource.repeticoes,
-      carga: treinoExercicioSource.carga,
-      observacoes: treinoExercicioSource.observacoes || "",
-    };
+  setExercicioEmEdicao(exercicioParaModal);
+  handleOpenOverlay('editExercicio_aovivo');
 
-    setExercicioEmEdicao(exercicioParaModal);
-    setGerenciarTreinoModalOpen(true);
-
-  }, [masterAlunosList]);
+}, [masterAlunosList, handleOpenOverlay, setExercicioEmEdicao]);
 // Função para FECHAR o modal de edição
 const handleFinishWorkout = useCallback(async () => {
   // Guardas rápidos
@@ -1774,9 +1832,6 @@ setActiveSessions(nextSessions);
 // (opcional) limpa o ritmo do aluno no array de alunos, se você exibe isso no card
 setMasterAlunosList(prev => prev.map(a => a.id === alunoId ? { ...a, ritmo: undefined } : a));
 
-// Recalcula ritmos do dashboard já com a sessão removida
-updateRitmos('finalizar-treino', nextSessions);
-
 // Volta para o dashboard preservando o resto do ViewState
 setViewState(prev => ({ ...prev, type: 'dashboard' }));
 
@@ -1793,12 +1848,73 @@ console.info('[FINISH] concluído com sucesso');
 } finally {
     finishingRef.current = false;
   }
-}, [viewState, setActiveSessions, setMasterAlunosList, updateRitmos, setViewState, profile, getTotalExerciciosPlano]);
-const handleCloseEditModal = useCallback(() => {
-  setExercicioEmEdicao(null); // Limpa o estado, o que vai fechar o modal
-}, []); // <-- Array de dependências com 'alunos'
+}, [viewState, setActiveSessions, setMasterAlunosList, setViewState, profile, getTotalExerciciosPlano]);
+const handleUpdateExerciseStatus = useCallback(
+  async (alunoId: string, exercicioId: string, newStatus: LiveExercise["status"]) => {
+    const session = activeSessions.find(s => s.alunoId === alunoId);
+    if (!session) return;
+
+    // 1) Base tipada corretamente
+    const base: LiveExercise[] = Array.isArray(session.exercises)
+      ? (session.exercises as LiveExercise[])
+      : [];
+
+    // 2) Atualização tipada como LiveExercise[]
+    const updated: LiveExercise[] = base.some((ex: LiveExercise) => ex.id === exercicioId)
+      ? base.map<LiveExercise>((ex: LiveExercise) =>
+          ex.id === exercicioId
+            ? { ...ex, status: newStatus }
+            : newStatus === "executando" && ex.status === "executando"
+              ? { ...ex, status: "nao-iniciado" as const }
+              : ex
+        )
+      : [...base, { id: exercicioId, status: newStatus }];
+
+    // 3) Persistir no DB
+    try { // 👈 INÍCIO DA REDE DE SEGURANÇA
+      const { error } = await supabase
+        .from("sessoes_ativas")
+        .update({ exercises: updated })
+        .eq("id", session.id);
+
+      if (error) {
+        throw error; // Lança o erro para ser pego pelo bloco catch
+      }
+
+      // Se a atualização no DB deu certo, atualizamos o estado local
+      const nextSessions: ActiveSession[] = activeSessions.map(s =>
+        s.id === session.id ? { ...s, exercises: updated } : s
+      );
+      setActiveSessions(nextSessions);
+      
+      // Lógica de finalização automática (já estava correta)
+      if (newStatus === 'finalizado') {
+      const totalExercicios = getTotalExerciciosPlano(alunoId, session.treinoId);
+      const finalizadosAgora = updated.filter(ex => ex.status === 'finalizado').length;
+
+      // Se o total de exercícios for maior que zero e todos foram finalizados...
+      if (totalExercicios > 0 && finalizadosAgora === totalExercicios) {
+        
+        // Atraso sutil para o usuário ver o último item ser marcado antes do pop-up
+        setTimeout(() => {
+          if (window.confirm("Parabéns, todos os exercícios foram finalizados! Deseja finalizar o treino agora?")) {
+            handleFinishWorkout();
+          }
+        }, 250); // Atraso de 250ms para melhorar a fluidez
+      }
+      }
+
+    } catch (error) { // 👈 FIM DA REDE DE SEGURANÇA
+      console.error("--- ERRO AO ATUALIZAR STATUS DO EXERCÍCIO ---", error);
+      alert("Não foi possível atualizar o exercício. A tela pode estar dessincronizada. Por favor, recarregue.");
+      // Aqui não retornamos, para que o fluxo não continue com dados inconsistentes
+    }
+  },
+  [activeSessions, getTotalExerciciosPlano, handleFinishWorkout, setActiveSessions] // Adicione setActiveSessions se ainda não estiver
+);
+
 // Esta é a nova instrução de salvamento que você perguntou
-const handleSaveExercicio = async (exercicioAtualizado: ExercicioParaModal) => {
+const handleSaveExercicio = useCallback(async (exercicioAtualizado: ExercicioParaModal) => {
     if (!exercicioAtualizado || !exercicioAtualizado.id) {
       console.error("Tentativa de salvar um exercício inválido.");
       return;
@@ -1806,15 +1922,15 @@ const handleSaveExercicio = async (exercicioAtualizado: ExercicioParaModal) => {
 
     try {
       // 1. Atualiza no banco de dados (seu código, já correto)
-const { error } = await supabase
-  .from('treino_exercicios')
-  .update({
-    series: Number(exercicioAtualizado.series),
-    repeticoes: String(exercicioAtualizado.repeticoes),
-    carga: String(exercicioAtualizado.carga || ''),
-    observacoes: String(exercicioAtualizado.observacoes || ''),
-  })
-  .eq('id', exercicioAtualizado.id);
+      const { error } = await supabase
+        .from('treino_exercicios')
+        .update({
+          series: Number(exercicioAtualizado.series),
+          repeticoes: String(exercicioAtualizado.repeticoes),
+          carga: String(exercicioAtualizado.carga || ''),
+          observacoes: String(exercicioAtualizado.observacoes || ''),
+        })
+        .eq('id', exercicioAtualizado.id);
 
       if (error) throw error;
 
@@ -1859,22 +1975,20 @@ const { error } = await supabase
         })
       );
 
-
       // 4. Fecha o modal
-      setGerenciarTreinoModalOpen(false);
-      setExercicioEmEdicao(null);
+      handleCloseOverlay();
       alert('Exercício atualizado com sucesso!');
 
-  } catch (error) {
-    if (error instanceof Error) {
-      console.error("Erro ao salvar as alterações do exercício:", error.message);
-      alert("Não foi possível salvar as alterações. " + error.message);
-    } else {
-      console.error("Erro desconhecido ao salvar as alterações do exercício:", error);
-      alert("Não foi possível salvar as alterações. Verifique o console para mais detalhes.");
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error("Erro ao salvar as alterações do exercício:", error.message);
+        alert("Não foi possível salvar as alterações. " + error.message);
+      } else {
+        console.error("Erro desconhecido ao salvar as alterações do exercício:", error);
+        alert("Não foi possível salvar as alterações. Verifique o console para mais detalhes.");
     }
   }
-};
+}, [masterAlunosList, setMasterAlunosList, setExerciciosDoTreino, handleCloseOverlay]);
 // Esta função agora recebe o ÍNDICE do exercício a ser removido
 const handleDeleteExercicio = useCallback ((treinoId: string, exercicioId: string)  => {
       if (!treinoEmEdicao) return;
@@ -2038,7 +2152,7 @@ const handleCriarNovoTreino = useCallback((aluno: Aluno) => {
 
 }, []); // Dependências podem ser adicionadas se necessário, como setViewState, etc.
 const handleAlunosImported = useCallback(async (novosAlunos: NovoAlunoData[]) => {
-  setUploadModalOpen(false); // Fecha o modal imediatamente
+  handleCloseOverlay(); // Fecha o modal imediatamente
   
   const total = novosAlunos.length;
   let sucessos = 0;
@@ -2073,14 +2187,21 @@ if (errorResult) {
   // A atualização do estado já acontece dentro de handleAddAluno,
   // então não precisamos chamar setMasterAlunosList aqui.
 
-}, [handleAddAluno]);
+}, [handleCloseOverlay, handleAddAluno]);
 const handleVerHistorico = useCallback(async (alunoId: string) => {
   // define o aluno mostrado no cabeçalho do modal
   const alunoSelecionado = masterAlunosList.find(a => a.id === alunoId) || null;
-  setAlunoParaVerHistorico(alunoSelecionado);
 
-  // abre modal em “loading”
-  setHistoricoOpen({ alunoId, loading: true });
+  setAlunoParaVerHistorico(alunoSelecionado);
+  setIsHistoricoLoading(true);
+  handleOpenOverlay('verHistorico');
+
+  // 👇 ADICIONE ESTES LOGS PARA DEBUGAR
+  console.log('--- DEBUG: handleVerHistorico ---');
+  console.log('Aluno selecionado:', alunoSelecionado);
+  console.log('Estado "activeOverlay" foi definido para:', 'verHistorico');
+  console.log('---------------------------------');
+
 
   try {
     const rows = await fetchHistoricoUltimos30(alunoId); // sua função já criada
@@ -2090,9 +2211,9 @@ const handleVerHistorico = useCallback(async (alunoId: string) => {
     setHistoricoRows([]);
   } finally {
     // tira o loading, mantendo o modal aberto
-    setHistoricoOpen(prev => (prev ? { ...prev, loading: false } : prev));
+    setIsHistoricoLoading(false);
   }
-}, [masterAlunosList]);
+}, [masterAlunosList, handleOpenOverlay]);
 const handleSaveTreino = useCallback(async () => {
   // 1. Trava de segurança e Validação
   if (!treinoEmEdicao || !activeAluno || !profile) {
@@ -2189,11 +2310,13 @@ const handleExercicioSelect = useCallback((exercicioIndex: number, suggestion: E
 
 }, [treinoEmEdicao, validationErrors]);
 const handleOpenEditPefModal = useCallback((pef: PEF) => {
+  console.log("-> Tentando abrir modal de edição para o PEF:", pef);
   setPefEmEdicao(pef);
-}, []);
+  handleOpenOverlay('editPef');
+}, [handleOpenOverlay, setPefEmEdicao]);
+
 const handleUpdatePef = useCallback(async (pefAtualizado: PEF) => {
   try {
-    // 1. Envia a atualização para a tabela 'profiles' no Supabase
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -2201,27 +2324,33 @@ const handleUpdatePef = useCallback(async (pefAtualizado: PEF) => {
         cpf: pefAtualizado.cpf,
         cref: pefAtualizado.cref,
         is_estagiario: pefAtualizado.is_estagiario
-        // O e-mail não é atualizado aqui, pois geralmente é fixo
       })
       .eq('id', pefAtualizado.id);
 
+    // MUDANÇA 1: Se houver um erro do Supabase, vamos inspecioná-lo e retorná-lo.
     if (error) {
-      throw error; // Lança o erro se a atualização no banco falhar
+      // Se for um erro de CPF duplicado
+      if (error.code === '23505') {
+        return { cpf: 'Este CPF já está cadastrado.' };
+      }
+      // Para outros erros, retornamos a mensagem genérica
+      throw error;
     }
 
-    // 2. Se o salvamento no banco for bem-sucedido, atualiza o estado local
-    setTreinadores(treinadoresAtuais =>
-      treinadoresAtuais.map((p: PEF) => (p.id === pefAtualizado.id ? pefAtualizado : p))
+    // MUDANÇA 2: Se o salvamento for bem-sucedido, atualizamos o estado local...
+    setTreinadores(treinadoresAtuais => 
+      treinadoresAtuais.map(p => (p.id === pefAtualizado.id ? pefAtualizado : p))
     );
     
-    setPefEmEdicao(null); // Fecha o modal
-    alert('Perfil atualizado com sucesso!');
+    // MUDANÇA 3: ...e retornamos 'null' para sinalizar SUCESSO.
+    return null;
 
   } catch (error) {
     console.error("Erro ao atualizar o perfil do PEF:", error);
-    alert("Não foi possível salvar as alterações no perfil.");
+    // MUDANÇA 4: Em caso de erro inesperado, retornamos um objeto de erro padronizado.
+    return { error: "Não foi possível salvar as alterações no perfil." };
   }
-}, []);
+}, [setTreinadores]);
 const handleTogglePefStatus = useCallback(async (pefId: string, statusAtual: 'ativo' | 'inativo') => {
   // 1. Determina o novo status
   const novoStatus = statusAtual === 'ativo' ? 'inativo' : 'ativo';
@@ -2295,7 +2424,7 @@ const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<Record
     }
 
     alert(`Sucesso! ${result.message}`);
-    setAddPefModalOpen(false);
+    handleCloseOverlay();
     fetchAllPefs();
     return null; // Retorna null em caso de sucesso
 
@@ -2310,7 +2439,7 @@ const handlePefSubmit = useCallback(async (novoPef: NovoPefData): Promise<Record
     // Se não, retornamos um erro genérico
     return { general: "Ocorreu um erro inesperado." };
   }
-}, [setAddPefModalOpen]);
+}, [handleCloseOverlay]);
 const handleIniciarSessaoDeTreino = useCallback(
   async (alunoId: string, treinoId?: string) => {
     if (!alunoId) {
@@ -2318,104 +2447,71 @@ const handleIniciarSessaoDeTreino = useCallback(
       return;
     }
 
-    // TRAVA contra clique duplo / StrictMode
     if (iniciandoSessaoRef.current === alunoId) return;
     iniciandoSessaoRef.current = alunoId;
 
     try {
-      // 1) Verifica se já existe sessão ativa no DB
       const { data: existente, error: errCheck } = await supabase
         .from('sessoes_ativas')
         .select('*')
         .eq('aluno_id', alunoId)
         .maybeSingle();
 
-      if (errCheck) {
-        console.error("Erro ao checar sessão ativa:", errCheck);
+      if (errCheck) throw errCheck;
+
+      // FLUXO 1: A SESSÃO JÁ EXISTE E ESTAMOS APENAS NAVEGANDO
+      if (existente) {
+        setViewState({
+          type: 'workout',
+          alunoId,
+          treinoId: existente.treino_id ?? null,
+        });
+        return;
       }
 
-if (existente) {
-  // 1) Troca de view imediata (navegação otimista)
-setViewState((prev: ViewState) => ({
-  ...prev,
-  type: 'workout',
-  alunoId,
-  treinoId: existente.treino_id ?? null,
-}));
+      // FLUXO 2: A SESSÃO É NOVA E PRECISA SER CRIADA
+      const payload = {
+        aluno_id: alunoId,
+        treino_id: treinoId ?? null,
+        start_time: new Date().toISOString(),
+        pef_responsavel_id: profile?.id ?? null,
+        exercises: [],
+      };
 
-// monta uma sessão local mínima só para o cálculo do ritmo
-const sessLocal: ActiveSession = {
-  id: existente.id,
-  alunoId,                                 // já está no escopo da função
-  treinoId: existente.treino_id ?? null,
-  startTime: existente.start_time ?? new Date().toISOString(),
-  exercises: [],                            // deixa 0 finalizados; total virá do plano
-  pef_responsavel_id: existente.pef_responsavel_id ?? null
-};
-refreshRitmos('start-session/existente', { [alunoId]: sessLocal });
-void refetchActiveSessionsDedup();        // atualiza do DB em background
-return;
-
-}
-
-      // 2) Não existe -> criar uma nova
-        const payload = {
-          aluno_id: alunoId,
-          treino_id: treinoId ?? null,
-          start_time: new Date().toISOString(),
-          pef_responsavel_id: profile?.id ?? null, // se quiser gravar quem iniciou
-          exercises: [],                            // opcional; default já é []
-        };
-
-      // upsert ajuda se existir índice único em aluno_id; se não existir, ainda estamos protegidos pela checagem acima
       const { data: inserida, error: errInsert } = await supabase
         .from('sessoes_ativas')
         .upsert(payload, { onConflict: 'aluno_id' })
         .select('*')
         .single();
 
-      if (errInsert) {
-        console.error("Erro ao iniciar sessão:", errInsert);
-        alert("Não foi possível iniciar o treino.");
-        return;
-      }
+      if (errInsert) throw errInsert;
 
-      // 3) Recarrega do DB para manter estado ≡ DB (sem empurrar manualmente)
-      // 3) Navegação otimista: troca a tela já
-setViewState((prev: ViewState) => ({
-  ...prev,
-  type: 'workout',
-  alunoId,
-  treinoId: inserida.treino_id ?? treinoId ?? null,
-}));
+      const sessLocal: ActiveSession = {
+        id: inserida.id,
+        alunoId: String(alunoId),
+        treinoId: inserida.treino_id ?? treinoId ?? null,
+        pef_responsavel_id: inserida.pef_responsavel_id ?? profile?.id ?? null,
+        startTime: inserida.start_time ?? new Date().toISOString(),
+        exercises: Array.isArray(inserida.exercises) ? inserida.exercises : [],
+        totalPlanejados: getTotalExerciciosPlano(alunoId, inserida.treino_id ?? treinoId ?? null) ?? undefined,
+      };
 
-const sessLocal: ActiveSession = {
-  id: inserida.id,
-  alunoId: String(alunoId),
-  treinoId: inserida.treino_id ?? treinoId ?? null,
-  pef_responsavel_id: inserida.pef_responsavel_id ?? profile?.id ?? null,
-  startTime: inserida.start_time ?? new Date().toISOString(),
-  exercises: Array.isArray(inserida.exercises) ? inserida.exercises : [],
-  totalPlanejados: getTotalExerciciosPlano(
-    alunoId,
-    inserida.treino_id ?? treinoId ?? null
-  ) ?? undefined,
-};
+      setActiveSessions(sessoesAtuais => [...sessoesAtuais.filter(s => s.alunoId !== alunoId), sessLocal]);
+      setViewState({
+        type: 'workout',
+        alunoId,
+        treinoId: inserida.treino_id ?? treinoId ?? null,
+      });
 
-// Atualiza o mapa de ritmos sem depender do refetch
-refreshRitmos('start-session/inserida', { [alunoId]: sessLocal });
-
-// Atualiza as sessões do DB em background (não bloqueia a navegação)
-void refetchActiveSessionsDedup();
-
-return; // evita executar qualquer coisa depois daqui
-
-      
+    } catch (error) {
+      console.error("Erro ao iniciar sessão:", error);
+      alert("Não foi possível iniciar o treino.");
     } finally {
       iniciandoSessaoRef.current = null;
     }
   },
-  [refreshRitmos, profile, getTotalExerciciosPlano]);
+  [profile, getTotalExerciciosPlano, setActiveSessions, setViewState] // <-- DEPENDÊNCIA CORRIGIDA
+);
 const handleAssumirTreino = useCallback(async (sessionId: string) => {
   // Garante que temos o perfil do usuário logado
   if (!profile) return;
@@ -2483,6 +2579,11 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
   alert(`🚫 Erro ao alterar status:\n\n${errorMessage}`);
   }
 }, [masterAlunosList]);
+const handleSaveExercicioAoVivo = useCallback(async (exercicioAtualizado: ExercicioParaModal) => {
+  // Por enquanto, esta função pode simplesmente chamar a outra.
+  // No futuro, você pode adicionar lógicas diferentes aqui.
+  await handleSaveExercicio(exercicioAtualizado);
+}, [handleSaveExercicio]); // A dependência é a própria função que ela chama
   // 3. Adicione a lógica de proteção de rota
   useEffect(() => {
     // Espera a verificação da sessão terminar (loading === false)
@@ -2491,7 +2592,21 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
       router.push('/login'); // Redireciona para a página de login
     }
   }, [user, loading, router]); // O efeito roda sempre que esses valores mudarem
+// 1. Criamos uma flag que detecta o estado inconsistente durante a renderização.
 
+
+// Guarda de Renderização: Detecta o estado inconsistente durante a renderização.
+const isWorkoutViewInconsistent = viewState.type === 'workout' && !activeSession;
+
+useEffect(() => {
+  // Efeito seguro que só reage à flag de inconsistência.
+  if (isWorkoutViewInconsistent) {
+    setTimeout(() => {
+      alert("Este treino foi finalizado ou o acesso foi interrompido.");
+      handleBackToDashboard();
+    }, 0); // Timeout de 0ms para rodar após a renderização atual
+  }
+}, [isWorkoutViewInconsistent, handleBackToDashboard]);
 
 
   // 5. Garanta que a página só seja renderizada para usuários logados
@@ -2548,12 +2663,19 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
       ) : null;
       break;
     case "workout":
+        // Se o estado estiver inconsistente, mostramos um feedback de carregamento
+  // enquanto o useEffect acima nos redireciona para o dashboard.
+  if (isWorkoutViewInconsistent) {
+    pageContent = <LoadingSpinner message="Sessão encerrada, redirecionando..." />;
+  } else {
+    // Se o estado for consistente, renderizamos normalmente.
       console.log("Dados enviados para LiveWorkoutView:", { exercicios: exerciciosDoTreino });
       pageContent =
-        activeAluno && activeSession ? (
+        activeAluno && activeSession && profile ? (
           <LiveWorkoutView
             session={activeSession!}
             aluno={activeAluno}
+            profile={profile}
             timeInTraining={tempoDeTreino}
             ritmo={activeAluno ? ritmosByAluno[activeAluno.id] : 'no_ritmo'}
             onBack={handleBackToDashboard}
@@ -2567,6 +2689,7 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
 
           />
         ) : null;
+      }
       break;
     case "select_plan":
       pageContent = activeAluno ? (
@@ -2592,7 +2715,7 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                   <h1 className="title-app">GymPro</h1>
       
                   {/* Container para o menu e as informações do PEF */}
-                  <div style={{ position: 'relative' }} ref={headerMenuRef}>
+            <div style={{ position: 'relative' }} ref={headerMenuRef}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
                       <div id="pef-info">
                         <span>{profile.nome}</span> <br />
@@ -2602,22 +2725,25 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                       </div>
                       
                       {/* Botão de 3 pontos que abre o menu */}
-                      <button className="options-icon" onClick={() => setHeaderMenuOpen(!isHeaderMenuOpen)}>
+                      <button 
+                        className="options-icon" 
+                        onPointerDown={(e) => e.stopPropagation()} // <-- LINHA ADICIONADA
+                        onClick={() => activeOverlay === 'headerMenu' ? handleCloseOverlay() : handleOpenOverlay('headerMenu')}
+                      >
                         {optionsIcon}
                       </button>
                     </div>
 
                     {/* O menu dropdown, que só aparece se 'isHeaderMenuOpen' for true */}
-                    {isHeaderMenuOpen && (
+                    {activeOverlay === 'headerMenu' && (
                       <div className="options-menu">
                      {profile.roles.includes('admin') && (
                   <>
                     <button
                       className="menu-item"
                       onClick={() => {
-                        // Corrected: Pass a full ViewState object
                         setViewState({ type: "gerenciar_alunos", alunoId: null, treinoId: undefined });
-                        setHeaderMenuOpen(false);
+                        handleCloseOverlay();
                       }}
                     >
                       Gerenciar Alunos
@@ -2626,21 +2752,11 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                       className="menu-item"
                       onClick={() => {
                         setViewState({ type: 'gerenciar_perfis', alunoId: null });
-                        setHeaderMenuOpen(false);
+                        handleCloseOverlay();
                       }}
                     >
                       Gerenciar Perfis
                     </button>
-                                          <button
-                          className="menu-item"
-                          onClick={() => {
-                            setUploadModalOpen(true); // Abre o modal
-                            setHeaderMenuOpen(false); // Fecha o menu
-                          }}
-                        >
-                          {/* Opcional: Adicionar um ícone de upload aqui */}
-                          Incluir Aluno via CSV
-                      </button>
                   </>
                 )}
                   <button
@@ -2724,8 +2840,12 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                     treinadores={treinadores}
                     profile={profile}
                     onAssumirTreino={handleAssumirTreino}
-                    isMenuOpen={openAlunoMenuId === aluno.id} // <<< CONECTADO
-                    onToggleMenu={() => setOpenAlunoMenuId(prevId => prevId === aluno.id ? null : aluno.id)} // <<< CONECTADO
+                    isMenuOpen={activeOverlay === `menu-aluno-${aluno.id}`}
+                    onToggleMenu={() => 
+                      activeOverlay === `menu-aluno-${aluno.id}`
+                        ? handleCloseOverlay()
+                        : handleOpenOverlay(`menu-aluno-${aluno.id}`)
+                    }
                     onNavigateToWorkout={handleNavigateToWorkout}
                     onGerenciarTreinos={handleGerenciarTreinos}
                     onVerHistorico={handleVerHistorico} 
@@ -2798,7 +2918,7 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
       )}
     </div>
      <button 
-       onClick={() => setAddPefModalOpen(true)} // <<< CONECTE A AÇÃO AQUI
+       onClick={() => handleOpenOverlay('addPef')} // <<< CONECTE A AÇÃO AQUI
        className="btn-primary-new"
       >
        + Adicionar Profissional
@@ -2810,12 +2930,8 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
       {treinadores
         .sort((a, b) => {
         // Regra 1: Ordenar por status ('ativo' vem antes de 'inativo')
-        if (a.status === 'ativo' && b.status === 'inativo') {
-          return -1; // 'a' vem primeiro
-        }
-        if (a.status === 'inativo' && b.status === 'ativo') {
-          return 1; // 'b' vem primeiro
-        }
+        if (a.status === 'ativo' && b.status === 'inativo') {return -1;}// 'a' vem primeiro
+        if (a.status === 'inativo' && b.status === 'ativo') {return 1; }// 'b' vem primeiro
 
         // Regra 2: Se os status forem iguais, ordenar por nome (ordem alfabética)
         // localeCompare é o método ideal para comparar strings alfabeticamente
@@ -2854,6 +2970,25 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                 <h1 className="title-page">Gerenciar Alunos</h1>
                 <h2 className="subtitle-page">Gerir Lista de Alunos</h2>
               </div>
+              <div style={{ position: 'relative', marginLeft: 'auto' }} ref={gerenciarMenuRef}>
+                <button 
+                  className="options-icon" 
+                  onPointerDown={(e) => e.stopPropagation()} // <-- LINHA ADICIONADA
+                  onClick={() => activeOverlay === 'gerenciarMenu' ? handleCloseOverlay() : handleOpenOverlay('gerenciarMenu')}
+                >
+                  {optionsIcon}
+                </button>
+              {activeOverlay === 'gerenciarMenu' && (
+                <div className="options-menu">
+                  <button
+                    className="menu-item"
+                    onClick={() => handleOpenOverlay('uploadCsv')}
+                  >
+                    Incluir Aluno via CSV
+                  </button>
+                </div>
+              )}
+              </div>
             </header>
             <main>
               <div className="controls">
@@ -2866,7 +3001,11 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
                   <input type="text" id="aluno-name-filter" placeholder="Filtrar por nome..." value={alunoSearch} onChange={(e) => setAlunoSearch(e.target.value)} />
                   {alunoSearch && (<button className="clear-btn" onClick={() => setAlunoSearch('')}>&times;</button>)}
                 </div>
-                <button onClick={() => setAddAlunoModalOpen(true)} className="btn-primary-new">+ Adicionar Aluno</button>
+                <button 
+                onClick={() => handleOpenOverlay('addAluno')}
+                className="btn-primary-new">
+                + Adicionar Aluno
+                </button>
               </div>
               <div id="aluno-list-container">
                 <div className="aluno-list">
@@ -2903,67 +3042,75 @@ const handleToggleAlunoStatus = useCallback(async (alunoId: string, statusAtual:
       </div>
     );
   } //trava de segurança para o caso de não haver pef com login válido
-    return (
+    
+  return (
+    
       <>
         {pageContent}
-        {exercicioEmEdicao && (
-          <EditExerciseModal
-            exercicio={exercicioEmEdicao} // Passamos apenas o objeto do exercício
-            onClose={handleCloseEditModal}
-            onSave={handleSaveExercicio}
+        {/* OS COMPONENTES DE GERENCIAMENTO E MODAIS GLOBAIS VIVEM AQUI */}
+        <BackButtonManager 
+          openExitModal={() => setIsExitModalOpen(true)}
+        />
+        <ExitConfirmationModal
+          isOpen={isExitModalOpen}
+          onClose={() => setIsExitModalOpen(false)}
+          onConfirm={handleAppExit}
+        />
+        <EditExerciseModal
+          // A prop 'isOpen' agora verifica se o estado COMEÇA COM 'editExercicio'
+          isOpen={activeOverlay?.startsWith('editExercicio') ?? false} 
+          exercicio={exercicioEmEdicao}
+          onClose={handleCloseOverlay}
+          // AQUI ESTÁ A MÁGICA:
+          // Usamos um operador ternário para escolher qual função passar para o onSave
+          onSave={
+            activeOverlay === 'editExercicio_aovivo' 
+              ? handleSaveExercicioAoVivo // <-- Crie esta função com a lógica do fluxo "Ao Vivo"
+              : handleSaveExercicio       // <-- Sua função de salvar padrão para o fluxo "Gerenciar"
+          }
           />
-        )}
-        {isGerenciarTreinoModalOpen && exercicioEmEdicao && (
-          <EditExerciseModal
-            exercicio={exercicioEmEdicao}
-            onClose={() => {
-              setGerenciarTreinoModalOpen(false);
-              setExercicioEmEdicao(null);
-            }}
-            onSave={handleSaveExercicio}
+        <CsvUploadModal 
+          isOpen={activeOverlay === 'uploadCsv'}
+          onClose={handleCloseOverlay} 
+          onImportSuccess={handleAlunosImported}
           />
-        )}
-        {isUploadModalOpen && (
-          <CsvUploadModal
-            onClose={() => setUploadModalOpen(false)} 
-            onImportSuccess={handleAlunosImported}
+        
+        <HistoricoModal
+          isOpen={activeOverlay === 'verHistorico'}
+          aluno={alunoParaVerHistorico}
+          rows={historicoRows}
+          loading={isHistoricoLoading}
+          onClose={handleCloseOverlay}
           />
-        )}
-        {alunoParaVerHistorico && historicoOpen && (
-          <HistoricoModal
-            aluno={alunoParaVerHistorico}
-            rows={historicoRows}
-            loading={historicoOpen.loading}
-            onClose={handleCloseHistorico}
+        
+        <PefEditModal
+          isOpen={activeOverlay === 'editPef'}
+          pef={pefEmEdicao}
+          onClose={handleCloseOverlay}
+          onSave={handleUpdatePef}
           />
-        )}
-        {pefEmEdicao && (
-          <PefEditModal
-            pef={pefEmEdicao}
-            onClose={() => setPefEmEdicao(null)}
-            onSave={handleUpdatePef}
+        
+        <PefAddModal
+          isOpen={activeOverlay === 'addPef'}
+          onClose={handleCloseOverlay}
+          onSave={handlePefSubmit}
           />
-        )}
-        {isAddPefModalOpen && (
-          <PefAddModal
-            onClose={() => setAddPefModalOpen(false)}
-            onSave={handlePefSubmit}
+                
+        <AlunoEditModal 
+          isOpen={activeOverlay === 'editAluno'}
+          aluno={alunoEmEdicao}
+          onClose={handleCloseOverlay}
+          onSave={handleSaveEditAluno}
           />
-        )}
-        {isAddAlunoModalOpen && (
-          <AlunoAddModal
-            onClose={() => setAddAlunoModalOpen(false)}
-            onSave={handleAddAluno} // Aqui a função é passada para o modal
+
+        <AlunoAddModal 
+          isOpen={activeOverlay === 'addAluno'}
+          onClose={handleCloseOverlay}
+          onSave={handleAddAluno} 
           />
-        )}
-        {alunoEmEdicao && (
-          <AlunoEditModal
-            aluno={alunoEmEdicao}
-            onClose={() => setAlunoEmEdicao(null)}
-            onSave={handleSaveEditAluno}
-          />
-        )}
+        
       </>
+      
     );
 }
 // =======================================================
@@ -2998,43 +3145,19 @@ function AlunoCard({
   onAssumirTreino: (sessionId: string) => void;
 }) {
 
-  useEffect(() => {
-    // A função que será chamada em qualquer clique na página
-    function handleClickOutside(event: MouseEvent) {
-      // Se o menu existe E o clique NÃO foi dentro dele...
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onToggleMenu(); // ...chama a função para fechar o menu.
-      }
-    }
-
-    // Só adicionamos o "escutador" de cliques se o menu estiver aberto
-    if (isMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    // Função de limpeza: remove o "escutador" quando não for mais necessário
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isMenuOpen, onToggleMenu]); // Dependências do efeito
+const menuRef = useClickOutside<HTMLDivElement>(() => {
+  // Só executa a ação de fechar se este menu específico estiver aberto
+  if (isMenuOpen) {
+    onToggleMenu();
+  }
+});
 
 const sessaoAtiva = activeSessions.find(s => {
-  // --- CÓDIGO DE DEPURAÇÃO ---
-  if (aluno.nome === "Ana Júlia Ribeiro" || aluno.nome === "Clara Dias") {
-    console.log(`--- Verificando para ${aluno.nome} ---`);
-    console.log(`ID do Aluno no Card: ${aluno.id} (Tipo: ${typeof aluno.id})`);
-    console.log(`ID do Aluno na Sessão: ${s.alunoId} (Tipo: ${typeof s.alunoId})`);
-    console.log('------------------------------------');
-  }
-  // --- FIM DO CÓDIGO DE DEPURAÇÃO ---
+
 
   return s.alunoId === aluno.id; 
 });
-const menuRef = useRef<HTMLDivElement>(null);
 const isEmTreinamento = !!sessaoAtiva;
-
-/*  const statusExibicao = isEmTreinamento ? 'em_treinamento' : aluno.matricula_status; */
-  
 const pefDaSessao = isEmTreinamento ? treinadores.find(p => p.id === sessaoAtiva.pef_responsavel_id) : null;
   
 const getPefFullNameById = (id: string | null | undefined) => {
@@ -3062,20 +3185,23 @@ if (isEmTreinamento) {onNavigateToWorkout(aluno.id);
   };
 
 const renderActions = () => {
+  // A variável isEmTreinamento já existe no seu componente
   if (isEmTreinamento) {
-    // Se está em treinamento COM OUTRO PEF, mostra "Assumir Treino"
+    // Cenário 1: Aluno está em treinamento
+    
+    // Se a sessão pertence a OUTRO PEF, mostramos o botão "Assumir Treino"
     if (sessaoAtiva && sessaoAtiva.pef_responsavel_id !== profile.id) {
       return (
-        <button className="action-btn"
-        onClick={() => onAssumirTreino(sessaoAtiva.id)}>
+        <button className="action-btn" onClick={() => onAssumirTreino(sessaoAtiva.id)}>
           Assumir Treino
         </button>
       );
     }
-    // Se estiver em treinamento com o PEF atual, não mostra nada.
+    // Se a sessão é minha (ou não tem responsável definido), não mostramos botão de ação.
     return null;
+
   } else {
-    // Se NÃO está em treinamento, está disponível. Mostra "Iniciar Treino".
+    // Cenário 2: Aluno está disponível
     return (
       <button className="action-btn" onClick={() => onNavigateToWorkout(aluno.id)}>
         Iniciar Treino
@@ -3096,7 +3222,7 @@ const renderActions = () => {
       <div className="card-header">
         {" "}
         <h3 className="title-card">{aluno.nome}</h3>{" "}
-        <div className="card-options-wrapper" ref={menuRef}>
+        <div className="card-options-wrapper" ref={menuRef}> 
           <button
             className="options-icon"
             onClick={(e) => {
@@ -3113,18 +3239,16 @@ const renderActions = () => {
                 onClick={(e) => {
                   e.stopPropagation();
                   onGerenciarTreinos(aluno.id);
-                  onToggleMenu();
                   }}
               >
-                Gerenciar Sessões de Treino
+                Gerenciar Treinos
               </button>
               <button
                 className="menu-item"
                 onClick={(e) => {
                   e.stopPropagation();
                   onVerHistorico(aluno.id);
-                  onToggleMenu();
-                }}
+                  }}
               >
                 Ver Histórico de Treinos
               </button>
@@ -3217,7 +3341,7 @@ function PefCard({
 
       <div className="actions">
         <button onClick={onEdit} className="btn btn-icon" title="Editar PEF">
-          {editIcon} {/* <<< ÍCONE PADRÃO */}
+          {editIcon}
         </button>
         <button onClick={() => onToggleStatus(pef.id, pef.status)}
                 className="btn btn-icon"
@@ -3237,42 +3361,172 @@ function PefEditModal({
   onClose,
   onSave,
 }: {
-  pef: PEF;
+  isOpen: boolean;
+  pef: PEF | null;
   onClose: () => void;
-  onSave: (pefAtualizado: PEF) => void;
+  onSave: (pefAtualizado: PEF) => Promise<any | null>;
 }) {
-  const [dadosEditados, setDadosEditados] = useState(pef);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [isCpfValidating, setIsCpfValidating] = useState(false);
+  const [dadosEditados, setDadosEditados] = useState(pef);
+  const isFormValid = useMemo(() => {
+  if (!dadosEditados) return false;
+  // Validação básica: nome não pode ser vazio e não pode haver erros nos campos.
+  const requiredTextFieldsValid = dadosEditados.nome.trim() !== '' && dadosEditados.cpf.trim() !== '';
+  const noValidationErrors = Object.keys(errors).length === 0;
+  return requiredTextFieldsValid && noValidationErrors;
+}, [dadosEditados, errors]);
   const [crefTemporario, setCrefTemporario] = useState<string | null>(null);
-  const handleChange = (campo: keyof PEF, valor: string | boolean) => {
-    setDadosEditados(dadosAtuais => ({ ...dadosAtuais, [campo]: valor }));
-  };
-const validatePefData = (pefData: PEF): Record<string, string> => {
-    const validationErrors: Record<string, string> = {};
+  const lastCheckedCpf = useRef<string | null>(null);
 
-    if (!pefData.cpf?.trim()) {
-      validationErrors.cpf = "CPF é obrigatório.";
+useEffect(() => {
+  // LINHA 1: Atualiza o objeto principal de dados
+  setDadosEditados(pef);
+
+  // LINHA 2: Atualiza o estado auxiliar e específico do CREF
+  if (pef) {
+    setCrefTemporario(pef.cref);
+  }
+  setErrors({});
+}, [pef]);
+
+    if (!pef) {
+    return null;
+  }
+
+const handleCpfBlur = async () => {
+  if (!dadosEditados) return; 
+  // Use o nome correto da sua variável de estado (ex: dadosPef ou dadosEditados)
+  const currentCpf = dadosEditados.cpf.trim();
+
+  // ETAPA 1: Limpa qualquer erro de CPF anterior para começar uma nova validação.
+  setErrors(prev => {
+    const newErrors = { ...prev };
+    delete newErrors.cpf;
+    return newErrors;
+  });
+
+  // ETAPA 2: Se o campo estiver vazio após a limpeza, não fazemos nada.
+  if (currentCpf.length === 0) {
+    return;
+  }
+
+  // ETAPA 3: Validação MATEMÁTICA primeiro. É mais rápido e eficiente.
+  if (!isValidCPF(currentCpf)) {
+    setErrors(prev => ({ ...prev, cpf: 'O CPF digitado é inválido.' }));
+    return; // PARA AQUI. Não precisamos checar duplicidade de um CPF inválido.
+  }
+
+  // ETAPA 4: Se o CPF for matematicamente válido, aí sim checamos a duplicidade na API.
+  // (Esta é a sua lógica original, totalmente preservada).
+  if (currentCpf === lastCheckedCpf.current) {
+    return; // Evita chamada de API para o mesmo CPF.
+  }
+
+  setIsCpfValidating(true);
+  lastCheckedCpf.current = currentCpf;
+  setApiError(null);
+
+  try {
+    const response = await fetch('/api/validate-cpf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cpf: currentCpf }), // Usando a variável já limpa
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Falha na validação do CPF no servidor.");
     }
 
-    if (pefData.roles.includes('pef') && !pefData.is_estagiario && !pefData.cref?.trim()) {
-      validationErrors.cref = "CREF é obrigatório para PEFs formados.";
+    if (result.exists) {
+      setErrors(prev => ({ ...prev, cpf: 'Este CPF já está cadastrado.' }));
     }
+    // Se não existir, não fazemos nada, pois o erro já foi limpo na Etapa 1.
 
-    return validationErrors;
-  };
-// Em app/page.tsx, dentro do componente PefAddModal
-
-const handleSaveClick = () => {
-  // 1. Roda a função de validação que já existe dentro do PefEditModal
-  const validationErrors = validatePefData(dadosEditados);
-  // 2. Atualiza o estado de erros para este modal
-  setErrors(validationErrors);
-
-  // 3. Se os dados forem válidos, chama a função onSave para salvar as edições
-  if (Object.keys(validationErrors).length === 0) {
-    onSave(dadosEditados);
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Erro ao validar CPF onBlur:", error.message);
+      setApiError(error.message);
+    } else {
+      console.error("Erro desconhecido ao validar CPF onBlur:", error);
+      setApiError("Ocorreu um erro inesperado ao validar o CPF.");
+    }
+  } finally {
+    setIsCpfValidating(false);
   }
 };
+
+const handleChange = (campo: keyof PEF, valor: string | boolean) => {
+      
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[campo];
+      return newErrors;
+    });
+  // Ao atualizar, sempre usamos a forma de callback para garantir o valor mais recente.
+  setDadosEditados((dadosAtuais) => {
+    // Se por algum motivo não houver dados atuais, simplesmente não fazemos a atualização.
+    // Retornamos o estado como ele estava (neste caso, null ou o objeto PEF existente).
+    if (!dadosAtuais) {
+      return dadosAtuais;
+    }
+
+    // Se houver dados, aí sim fazemos a atualização.
+    // A partir deste ponto, o TypeScript já sabe que 'dadosAtuais' é um objeto PEF.
+    return { ...dadosAtuais, [campo]: valor };
+  });
+};
+
+const handleSaveClick = async () => {
+  // 1. Guarda de segurança e limpeza de estados
+  if (!dadosEditados) return;
+  setApiError(null);
+  setErrors({});
+
+  // 2. Validação local de campos antes de submeter
+  // (Use a função de validação correta para cada modal: validateAlunoData ou validatePefData)
+  const validationErrors = validatePefData(dadosEditados); // ou validatePefData(dadosEditados)
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors);
+    return;
+  }
+
+  // 3. Submissão para a API
+  setIsSubmitting(true);
+  const errorResult = await onSave(dadosEditados);
+  setIsSubmitting(false);
+
+  // 4. Tratamento COMPLETO da resposta
+  if (errorResult) {
+    // Erro específico de CPF
+    if (errorResult.cpf) {
+      setErrors({ cpf: errorResult.cpf });
+    
+    // Outros erros de campo em formato de array
+    } else if (Array.isArray(errorResult)) {
+      const newErrors: Record<string, string> = {};
+      errorResult.forEach((err: { field: string; error: string }) => {
+        newErrors[err.field] = err.error;
+      });
+      setErrors(newErrors);
+    
+    // Erro genérico
+    } else {
+      setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
+    }
+  } else {
+    // 5. Tratamento de SUCESSO!
+    alert('Alterações salvas com sucesso!');
+    onClose(); // Fecha o modal
+  }
+};
+if (!dadosEditados) {
+  return null; // Não desenha nada se não houver dados.
+}
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -3296,16 +3550,24 @@ const handleSaveClick = () => {
            </div>
           <div className="input-group">
             <label htmlFor="pef-cpf">CPF</label>
+            <div className="input-with-icon">
             <input
               id="pef-cpf"
               type="text"
               value={dadosEditados.cpf || ''}
               onChange={(e) => handleChange('cpf', e.target.value)}
+              onBlur={handleCpfBlur}
               placeholder="000.000.000-00"
-              className={errors.cpf ? 'invalid' : ''} // Reutilização do padrão de erro
+              className={errors.cpf ? 'invalid' : ''}
+              disabled={isCpfValidating}
             />
-            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+            {isCpfValidating && <div className="spinner"></div>}
           </div>
+          {/* Exibe a mensagem de erro APENAS se não estiver validando */}
+          {!isCpfValidating && errors.cpf && (
+            <span className="error-message">{errors.cpf}</span>
+          )}
+        </div>
            <div className="input-group">
               <label htmlFor="pef-email">E-mail</label>
               <input
@@ -3345,24 +3607,28 @@ const handleSaveClick = () => {
               value={dadosEditados.cref || ''}
               onChange={(e) => handleChange('cref', e.target.value)}
               className={errors.cref ? 'invalid' : ''}
-              disabled={dadosEditados.is_estagiario} // <<< LÓGICA CONDICIONAL
+              disabled={dadosEditados.is_estagiario}
               placeholder={
                 dadosEditados.is_estagiario 
                   ? 'Não aplicável para estagiários' 
                   : 'Ex: 012345-G/RJ'
-              } // <<< UX MELHORADO
+              }
             />
             {errors.cref && <span className="error-message">{errors.cref}</span>}
           </div>
           {/* Futuros campos irão aqui dentro do modal-body */}
         </div>
-
-        {/* 3. Usando as Actions Unificadas */}
         <div className="modal-actions">
-          {/* Opcional: Adicionar um espaço para futuros erros de API */}
+          {apiError && <p className="api-feedback-error">{apiError}</p>}
           <div className="button-group">
             <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-primary" onClick={handleSaveClick}>Salvar</button>
+            <button
+                className="btn btn-primary"
+                onClick={handleSaveClick}
+                disabled={!isFormValid || isSubmitting}
+            >
+                {isSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
           </div>
         </div>
 
@@ -3419,6 +3685,7 @@ return (
 function LiveWorkoutView({
   session,
   aluno,
+  profile,
   ritmo,
   treinoAtivo,
   onBack,
@@ -3432,6 +3699,7 @@ function LiveWorkoutView({
 }: {
   session: ActiveSession;
   aluno: Aluno;
+  profile: PEF;
   ritmo: 'no_ritmo' | 'atrasado';
   treinoAtivo: Treino | null; 
   onBack: () => void;
@@ -3446,7 +3714,7 @@ function LiveWorkoutView({
   exerciciosParaRenderizar: ExercicioComStatus[];
   isWorkoutLoading: boolean;
 }) {
-
+const isPefResponsavel = session.pef_responsavel_id === profile?.id;
     if (isWorkoutLoading) {
 return <LoadingSpinner message="Carregando detalhes do treino..." />;
   }
@@ -3529,11 +3797,12 @@ console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
                 <h4>{exercicio.nome}</h4>
                 <div className="icons">
                   <button
-                    className="btn btn-icon"
-                    title="Editar"
-                    onClick={() => onEditarExercicio(treinoAtivo!.id, exercicio.id)}
+                      className={`btn btn-icon ${!isPefResponsavel ? 'btn-disabled-inactivate' : ''}`} // Opcional: Adiciona classe para estilo visual
+                      title={!isPefResponsavel ? "Apenas o PEF responsável pode editar o exercício." : "Editar"}
+                      onClick={() => onEditarExercicio(treinoAtivo!.id, exercicio.id)}
+                      disabled={!isPefResponsavel}
                   >
-                    {editIcon}
+                      {editIcon}
                   </button>
                 </div>
               </div>
@@ -3549,16 +3818,20 @@ console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
               <div className="exercise-controls">
                 {exercicio.status === "nao-iniciado" && (
                   <button
-                    className="btn-exercise-status start"
+                    className={`btn-exercise-status start ${!isPefResponsavel ? 'btn-action-disabled' : ''}`}
                     onClick={() => onUpdateExercise(exercicio.exercicio_id, "executando")}
+                    disabled={!isPefResponsavel} 
+                    title={!isPefResponsavel ? "Apenas o PEF responsável pode iniciar o exercício." : ""}
                   >
                     Iniciar
                   </button>
                 )}
                 {exercicio.status === "executando" && (
                   <button
-                    className="btn-exercise-status finish"
+                    className={`btn-exercise-status finish ${!isPefResponsavel ? 'btn-action-disabled' : ''}`}
                     onClick={() => onUpdateExercise(exercicio.exercicio_id, "finalizado")}
+                    disabled={!isPefResponsavel}
+                    title={!isPefResponsavel ? "Apenas o PEF responsável pode finalizar o exercício." : "Finalizar exercício"}
                   >
                     Finalizar
                   </button>
@@ -3573,7 +3846,12 @@ console.log("LISTA FINAL PARA RENDERIZAÇÃO:", exerciciosParaRenderizar);
       </div>
 
       <div className="workout-actions">
-        <button className="action-btn btn-finalizar-treino" onClick={onFinishWorkout}>
+        <button 
+          className={`action-btn btn-finalizar-treino ${!isPefResponsavel ? 'btn-action-disabled' : ''}`}
+          onClick={onFinishWorkout}
+          disabled={!isPefResponsavel} 
+          title={!isPefResponsavel ? "Apenas o PEF responsável pode finalizar o treino." : ""}
+        >
           Finalizar Treino
         </button>
       </div>
@@ -3674,7 +3952,7 @@ function GerenciarTreinosPage({
         </button>
         <div className="header-text-container">
           <h1 className="title-page">{aluno.nome}</h1>
-          <h2 className="subtitle-page">Gerenciar Sessões de Treino</h2>
+          <h2 className="subtitle-page">Gerenciar Treinos</h2>
         </div>
       </header>
       <main>
@@ -3759,15 +4037,16 @@ function GerenciarTreinosPage({
                   <button
                     onClick={(e) => { e.stopPropagation(); onExcluirTreino(treino.id); }}
                     className={`btn btn-icon btn-delete ${
-                      (treino.status === 'inativo' && temHistorico) ? 'btn-disabled-inactivate' : ''
+                      // A classe visual agora segue a mesma regra da funcionalidade
+                      (planStatus === "em-treinamento" || temHistorico) ? 'btn-disabled-inactivate' : ''
                     }`}
-                    disabled={(treino.status === 'inativo' && temHistorico) || planStatus === "em-treinamento"}
+                    disabled={planStatus === "em-treinamento" || temHistorico}
                     title={
                       planStatus === "em-treinamento"
                         ? "Não é possível excluir um treino em andamento."
-                        : (temHistorico
-                            ? "Este treino não pode ser excluído, pois possui um histórico associado."
-                            : "Excluir Treino")
+                      : temHistorico
+                        ? "Este treino não pode ser excluído, pois possui um histórico associado."
+                      : "Excluir Treino"
                     }
                   >
                     {deleteIcon}
@@ -3816,7 +4095,7 @@ function GerenciarTreinosPage({
         </div>
       </main>
 
-      <button onClick={onCriarTreino} className="fab-create-plan" title="Criar Nova Sessão de Treino">
+      <button onClick={onCriarTreino} className="fab-create-plan" title="Criar Novo Treino">
         {addIcon}
       </button>
     </div>
@@ -4028,16 +4307,33 @@ if (onSuggestionSelect) {
   );
 }
 function EditExerciseModal<T extends ExercicioEditavel>({
+  isOpen,
   exercicio,
   onClose,
   onSave,
 }: EditExerciseModalProps<T>) {
+
+  console.log(`%cEditExerciseModal Renderizando:`, 'color: blue; font-weight: bold;', { isOpen, exercicio });
   // 1. Estado interno para guardar as MUDANÇAS feitas pelo usuário.
   const [editedExercicio, setEditedExercicio] = useState(exercicio);
   const [errors, setErrors] = useState<ExercicioError>({});
     // Buscamos as informações do exercício na biblioteca para usar no cabeçalho.
   // Para exibir o nome do exercício no modal, você pode simplesmente usar:
   // <h2>{editedExercicio?.nome}</h2>
+  // 2. A verificação entra aqui, como a PRIMEIRA COISA no componente.
+
+  useEffect(() => {
+    // Este efeito "escuta" por mudanças na prop 'exercicio'.
+    // Se a prop 'exercicio' mudar (porque o usuário clicou em outro item),
+    // este código roda e atualiza o estado interno 'dadosEditados' com os novos dados.
+    setEditedExercicio(exercicio);
+  }, [exercicio]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+
   // 2. Handler para atualizar o estado interno quando o usuário digita.
   const handleInputChange = (campo: keyof TreinoExercicio, valor: string) => {
     if (!editedExercicio) return;
@@ -4157,7 +4453,7 @@ function TreinoEditView({
   setValidationErrors,
 }: TreinoEditViewProps) {
 
-    const pageTitle = treino.nome ? "Editar Sessão de Treino" : "Criar Nova Sessão de Treino";
+    const pageTitle = treino.nome ? "Editar Treino" : "Criar Novo Treino";
 
   // 3. ESTADO LOCAL PARA CONTROLAR OS CARDS EXPANDIDOS
   const [expandedItems, setExpandedItems] = useState<{
@@ -4270,14 +4566,22 @@ function TreinoEditView({
   );
 }
 function CsvUploadModal({
+  isOpen,
   onClose,
   onImportSuccess
 }: {
+  isOpen: boolean;
   onClose: () => void;
   onImportSuccess: (novosAlunos: NovoAlunoData[]) => void;
 }) {
+  
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  if (!isOpen) {
+    return null;
+  }
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -4363,16 +4667,21 @@ return (
   );
 }
 function HistoricoModal({ 
+  isOpen,
   aluno,
   rows,
   loading = false,
   onClose,
 }: {
+  isOpen: boolean;
   aluno: Aluno | null;
   rows: HistoricoRow[];
   loading?: boolean;
   onClose: () => void;
 }) {
+  if (!isOpen) {
+    return null;
+  }
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content historico-modal" onClick={(e) => e.stopPropagation()}>
@@ -4388,7 +4697,7 @@ function HistoricoModal({
             // centralizar um spinner simples, sem usar o componente de tela cheia.
             <div className="historico-loading">
               {spinnerIcon}
-              <p>Carregando histórico...</p>
+              <p>Carregando histórico de treinos...</p>
             </div>
           ) : (
             // Se não estiver carregando, mostra a lista de resultados
@@ -4445,13 +4754,15 @@ const StatusIcon = ({ status }: { status: HistoricoItem['status'] }) => {
   return <div style={{ ...styles, backgroundColor: 'var(--text-secondary)' }}>-</div>;
 };
 function PefAddModal({
+  isOpen,
   onClose,
   onSave,
 }: {
+  isOpen: boolean;
   onClose: () => void;
-    onSave: (novoPef: NovoPefData) => Promise<Record<string, string> | null>;
+  onSave: (novoPef: NovoPefData) => Promise<Record<string, string> | null>;
 }) {
-  // ESTADOS INTERNOS DO MODAL (O assistente tem suas próprias ferramentas)
+    
   const [dadosPef, setDadosPef] = useState({
     nome: '',
     cpf: '',
@@ -4464,6 +4775,39 @@ function PefAddModal({
   const [apiError, setApiError] = useState<string | null>(null);
   const [isCpfValidating, setIsCpfValidating] = useState(false);
   const lastCheckedCpf = useRef<string | null>(null);
+  const isFormValid = useMemo(() => {
+    // Verifica se os campos de texto obrigatórios estão preenchidos
+    const requiredTextFieldsValid = dadosPef.nome.trim() !== '' && dadosPef.email.trim() !== '' && dadosPef.cpf.trim() !== '';
+    // Verifica a regra condicional do CREF
+    const crefIsValid = dadosPef.is_estagiario || (!dadosPef.is_estagiario && dadosPef.cref.trim() !== '');
+    // O formulário só é válido se não houver NENHUM erro
+    const noValidationErrors = Object.keys(errors).length === 0;
+
+    return requiredTextFieldsValid && crefIsValid && noValidationErrors;
+  }, [dadosPef, errors]);
+
+useEffect(() => {
+    // Este efeito será executado sempre que 'isOpen' mudar.
+    if (isOpen) {
+      // Se o modal está sendo aberto, limpamos todos os estados.
+      setDadosPef({
+        nome: '',
+        cpf: '',
+        email: '',
+        cref: '',
+        is_estagiario: false,
+      });
+      setErrors({});
+      setApiError(null);
+      setIsSubmitting(false);
+      setIsCpfValidating(false);
+      lastCheckedCpf.current = null;
+    }
+  }, [isOpen]); // A "dependência" do efeito é a propriedade isOpen.
+
+  if (!isOpen) {
+    return null;
+  }
 
   const handleChange = (campo: keyof typeof dadosPef, valor: string | boolean) => {
     setErrors(prev => {
@@ -4480,164 +4824,164 @@ function PefAddModal({
     }
     setDadosPef(dadosAtuais => ({ ...dadosAtuais, [campo]: valor }));
   };
-// Dentro de function PefAddModal(...)
 
 const handleCpfBlur = async () => {
-    const currentCpf = dadosPef.cpf.trim();
+  // Use o nome correto da sua variável de estado (ex: dadosPef ou dadosEditados)
+  const currentCpf = dadosPef.cpf.trim();
 
-    // SUGESTÃO 1: A verificação para evitar chamadas duplicadas
-    if (currentCpf.length < 11 || currentCpf === lastCheckedCpf.current) {
+  // ETAPA 1: Limpa qualquer erro de CPF anterior para começar uma nova validação.
+  setErrors(prev => {
+    const newErrors = { ...prev };
+    delete newErrors.cpf;
+    return newErrors;
+  });
+
+  // ETAPA 2: Se o campo estiver vazio após a limpeza, não fazemos nada.
+  if (currentCpf.length === 0) {
     return;
   }
 
+  // ETAPA 3: Validação MATEMÁTICA primeiro. É mais rápido e eficiente.
+  if (!isValidCPF(currentCpf)) {
+    setErrors(prev => ({ ...prev, cpf: 'O CPF digitado é inválido.' }));
+    return; // PARA AQUI. Não precisamos checar duplicidade de um CPF inválido.
+  }
+
+  // ETAPA 4: Se o CPF for matematicamente válido, aí sim checamos a duplicidade na API.
+  // (Esta é a sua lógica original, totalmente preservada).
+  if (currentCpf === lastCheckedCpf.current) {
+    return; // Evita chamada de API para o mesmo CPF.
+  }
+
   setIsCpfValidating(true);
-  lastCheckedCpf.current = currentCpf; // Armazena o CPF que estamos verificando
-  setApiError(null); // Limpa qualquer erro genérico anterior
+  lastCheckedCpf.current = currentCpf;
+  setApiError(null);
 
   try {
     const response = await fetch('/api/validate-cpf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cpf: dadosPef.cpf }),
+      body: JSON.stringify({ cpf: currentCpf }), // Usando a variável já limpa
     });
-
-    const result = await response.json(); // Lê a resposta JSON em todos os casos
+    const result = await response.json();
 
     if (!response.ok) {
-      // Se a resposta não for de sucesso, lançamos a mensagem de erro específica que a API nos enviou.
-      // O 'result.error' vem do { error: '...' } que definimos na nossa API.
       throw new Error(result.error || "Falha na validação do CPF no servidor.");
     }
 
-    // Se a resposta foi de sucesso, checamos o resultado da validação
     if (result.exists) {
       setErrors(prev => ({ ...prev, cpf: 'Este CPF já está cadastrado.' }));
-    } else {
-      // Garante que qualquer erro anterior de CPF seja limpo
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors.cpf;
-        return newErrors;
-      });
     }
-} catch (error) { // Removido o tipo 'any'
-  // Verificamos se o erro é uma instância de Error para usar sua mensagem
-  if (error instanceof Error) {
-    console.error("Erro ao validar CPF onBlur:", error.message);
-    setApiError(error.message);
-  } else {
-    // Caso contrário, logamos o erro desconhecido e definimos uma mensagem genérica
-    console.error("Erro desconhecido ao validar CPF onBlur:", error);
-    setApiError("Ocorreu um erro inesperado ao validar o CPF.");
-  }
-} finally {
+    // Se não existir, não fazemos nada, pois o erro já foi limpo na Etapa 1.
+
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Erro ao validar CPF onBlur:", error.message);
+      setApiError(error.message);
+    } else {
+      console.error("Erro desconhecido ao validar CPF onBlur:", error);
+      setApiError("Ocorreu um erro inesperado ao validar o CPF.");
+    }
+  } finally {
     setIsCpfValidating(false);
   }
 };
   const handleSaveClick = async () => {
   setApiError(null);
   setErrors({}); // Limpa todos os erros de campo antigos
-  const validationErrors = validateNewPefData(dadosPef);
-  
-  if (Object.keys(validationErrors).length > 0) {
-    setErrors(validationErrors);
-    return; // Para a execução se a validação de frontend falhar
-  }
-
-  setIsSubmitting(true);
-  const errorResult = await onSave(dadosPef);
-  setIsSubmitting(false);
-
-  if (errorResult) {
-    // --- LÓGICA ATUALIZADA PARA MÚLTIPLOS ERROS ---
-    if (Array.isArray(errorResult.errors)) {
-      // Se a API retornou um array de erros de campo...
-      const newErrors: Record<string, string> = {};
-      errorResult.errors.forEach((err: { field: string; error: string }) => {
-        newErrors[err.field] = err.error;
-      });
-      // ...preenchemos o estado de erros com todos eles de uma vez.
-      setErrors(newErrors);
-    } else {
-      // Se for um erro genérico (sem o array 'errors'), mostramos no rodapé
-      setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
+    const validationErrors = validateNewPefData(dadosPef);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return; // Para a execução se a validação de frontend falhar
     }
+
+    setIsSubmitting(true);
+    const errorResult = await onSave(dadosPef);
+    setIsSubmitting(false);
+
+if (errorResult) {
+  // Primeiro, verificamos se a mensagem de erro é a que esperamos para CPF duplicado.
+  if (errorResult.cpf) { // Se existe uma propriedade 'cpf' no objeto de erro
+    setErrors({ cpf: errorResult.cpf });
+
+  // Se não for o erro de CPF, checamos se é outro erro de campo estruturado.
+  } else if (Array.isArray(errorResult.errors)) {
+    const newErrors: Record<string, string> = {};
+    errorResult.errors.forEach((err: { field: string; error: string }) => {
+      newErrors[err.field] = err.error;
+    });
+    setErrors(newErrors);
+
+  // Se não for nenhum dos anteriores, é um erro genérico.
+  } else {
+    setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
   }
-};
-  const isFormValid = useMemo(() => {
-    // Verifica se os campos de texto obrigatórios estão preenchidos
-    const requiredTextFieldsValid = dadosPef.nome.trim() !== '' && dadosPef.email.trim() !== '' && dadosPef.cpf.trim() !== '';
-    // Verifica a regra condicional do CREF
-    const crefIsValid = dadosPef.is_estagiario || (!dadosPef.is_estagiario && dadosPef.cref.trim() !== '');
-    // O formulário só é válido se não houver NENHUM erro
-    const noValidationErrors = Object.keys(errors).length === 0;
+}
+  };
 
-    return requiredTextFieldsValid && crefIsValid && noValidationErrors;
-  }, [dadosPef, errors]);
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close-btn" onClick={onClose}>&times;</button>
-        <div className="modal-header">
-          <h2 className="title-modal">Adicionar Profissional</h2>
-          <p className="subtitle-modal">Insira os dados</p>
-        </div>
-        <div className="modal-body">
-          {/* Campo de Nome */}
-          <div className="input-group">
-            <label htmlFor="pef-add-nome">Nome Completo</label>
-            <input id="pef-add-nome" type="text" value={dadosPef.nome} onChange={(e) => handleChange('nome', e.target.value)} placeholder="Nome do profissional" className={errors.nome ? 'invalid' : ''} />
-            {errors.nome && <span className="error-message">{errors.nome}</span>}
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <button className="modal-close-btn" onClick={onClose}>&times;</button>
+          <div className="modal-header">
+            <h2 className="title-modal">Adicionar Profissional</h2>
+            <p className="subtitle-modal">Insira os dados</p>
           </div>
-                    {/* Campo de CPF */}
-          <div className="input-group">
-            <label htmlFor="pef-add-cpf">CPF</label>
-            <div className="input-with-icon"> {/* Wrapper para posicionar o ícone */}
-              <input 
-                id="pef-add-cpf"
-                type="text"
-                value={dadosPef.cpf}
-                onChange={(e) => handleChange('cpf', e.target.value)}
-                onBlur={handleCpfBlur}
-                placeholder="000.000.000-00"
-                className={errors.cpf ? 'invalid' : ''}
-              />
-              {isCpfValidating && <div className="spinner"></div>} {/* Ícone de loading */}
+          <div className="modal-body">
+            <div className="input-group">
+              <label htmlFor="pef-add-nome">Nome Completo</label>
+              <input id="pef-add-nome" type="text" value={dadosPef.nome} onChange={(e) => handleChange('nome', e.target.value)} placeholder="Nome do profissional" className={errors.nome ? 'invalid' : ''} />
+              {errors.nome && <span className="error-message">{errors.nome}</span>}
             </div>
-            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+             <div className="input-group">
+              <label htmlFor="pef-add-cpf">CPF</label>
+              <div className="input-with-icon"> {/* Wrapper para posicionar o ícone */}
+                <input 
+                  id="pef-add-cpf"
+                  type="text"
+                  value={dadosPef.cpf}
+                  onChange={(e) => handleChange('cpf', e.target.value)}
+                  onBlur={handleCpfBlur}
+                  placeholder="000.000.000-00"
+                  className={errors.cpf ? 'invalid' : ''}
+                  disabled={isCpfValidating}
+                />
+                {isCpfValidating && <div className="spinner"></div>} {/* Ícone de loading */}
+              </div>
+              {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+            </div>
+            {/* Campo de E-mail */}
+            <div className="input-group">
+              <label htmlFor="pef-add-email">E-mail</label>
+              <input id="pef-add-email" type="email" value={dadosPef.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="email@dominio.com" className={errors.email ? 'invalid' : ''} />
+              {errors.email && <span className="error-message">{errors.email}</span>}
+            </div>
+            {/* Checkbox e Campo de CREF */}
+            <div className="input-group-checkbox">
+              <input id="pef-add-estagiario" type="checkbox" checked={dadosPef.is_estagiario} onChange={(e) => handleChange('is_estagiario', e.target.checked)} />
+              <label htmlFor="pef-add-estagiario">Este profissional é um estagiário</label>
+            </div>
+            <div className="input-group">
+              <label htmlFor="pef-add-cref">CREF</label>
+              <input id="pef-add-cref" type="text" value={dadosPef.cref} onChange={(e) => handleChange('cref', e.target.value)} disabled={dadosPef.is_estagiario} placeholder={dadosPef.is_estagiario ? 'Não aplicável para estagiários' : 'Ex: 012345-G/RJ'} className={errors.cref ? 'invalid' : ''} />
+              {errors.cref && <span className="error-message">{errors.cref}</span>}
+            </div>
           </div>
-          {/* Campo de E-mail */}
-          <div className="input-group">
-            <label htmlFor="pef-add-email">E-mail</label>
-            <input id="pef-add-email" type="email" value={dadosPef.email} onChange={(e) => handleChange('email', e.target.value)} placeholder="email@dominio.com" className={errors.email ? 'invalid' : ''} />
-            {errors.email && <span className="error-message">{errors.email}</span>}
-          </div>
-          {/* Checkbox e Campo de CREF */}
-          <div className="input-group-checkbox">
-            <input id="pef-add-estagiario" type="checkbox" checked={dadosPef.is_estagiario} onChange={(e) => handleChange('is_estagiario', e.target.checked)} />
-            <label htmlFor="pef-add-estagiario">Este profissional é um estagiário</label>
-          </div>
-          <div className="input-group">
-            <label htmlFor="pef-add-cref">CREF</label>
-            <input id="pef-add-cref" type="text" value={dadosPef.cref} onChange={(e) => handleChange('cref', e.target.value)} disabled={dadosPef.is_estagiario} placeholder={dadosPef.is_estagiario ? 'Não aplicável para estagiários' : 'Ex: 012345-G/RJ'} className={errors.cref ? 'invalid' : ''} />
-            {errors.cref && <span className="error-message">{errors.cref}</span>}
-          </div>
-        </div>
-        <div className="modal-actions">
-          {apiError && <p className="api-feedback-error">{apiError}</p>}
-          <div className="button-group">
-            <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-primary" onClick={handleSaveClick}               
-            disabled={!isFormValid || isSubmitting || isCpfValidating}
-            >
-              {isSubmitting ? 'Enviando...' : 'Enviar convite'}
-            </button>
+          <div className="modal-actions">
+            {apiError && <p className="api-feedback-error">{apiError}</p>}
+            <div className="button-group">
+              <button className="btn btn-secondary" onClick={onClose}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSaveClick}               
+              disabled={!isFormValid || isSubmitting || isCpfValidating}
+              >
+                {isSubmitting ? 'Enviando...' : 'Enviar convite'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
 }
 function calcularRitmo(
   startTimeISO: string,
@@ -4699,33 +5043,121 @@ function calcularRitmo(
 function LoadingSpinner({ message }: { message?: string }) {
     return (
     <div className="loading-overlay">
-      {message && <p>{message}</p>}
       {spinnerIcon}
-    </div>
+      {message && <p>{message}</p>}
+      </div>
   );
 }
 function AlunoAddModal({
+  isOpen,
   onClose,
   onSave,
 }: {
+  isOpen: boolean;
   onClose: () => void;
   onSave: (novoAluno: NovoAlunoData) => Promise<Record<string, string> | null>;
 }) {
+
   const [dadosAluno, setDadosAluno] = useState<NovoAlunoData>({
     nome: '',
     cpf: '',
     observacao: '',
   });
-
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const isFormValid = useMemo(() => {
+  const requiredTextFieldsValid = dadosAluno.nome.trim() !== '' && dadosAluno.cpf.trim() !== '';
+  const noValidationErrors = Object.keys(errors).length === 0;
+  return requiredTextFieldsValid && noValidationErrors;
+  }, [dadosAluno, errors]);
+  const [isCpfValidating, setIsCpfValidating] = useState(false);
+  const lastCheckedCpf = useRef<string | null>(null);
 
-  // Lógica de validação de CPF onBlur
-  // Essa lógica pode ser reutilizada da função `handleCpfBlur` do PefAddModal
-  // Se precisar de ajuda para adaptar essa função, me avise.
+  useEffect(() => {
+    // Este efeito será executado sempre que 'isOpen' mudar.
+    if (isOpen) {
+      // Se o modal está sendo aberto, limpamos todos os estados para seus valores iniciais.
+      setDadosAluno({
+        nome: '',
+        cpf: '',
+        observacao: '',
+      });
+      setErrors({});
+      setApiError(null);
+      setIsSubmitting(false);
+      setIsCpfValidating(false);
+      lastCheckedCpf.current = null;
+    }
+  }, [isOpen]);
 
-  const handleChange = (campo: keyof NovoAlunoData, valor: string) => {
+  if (!isOpen) {
+    return null;
+  }
+
+const handleCpfBlur = async () => {
+  // Use o nome correto da sua variável de estado (ex: dadosPef ou dadosEditados)
+  const currentCpf = dadosAluno.cpf.trim();
+
+  // ETAPA 1: Limpa qualquer erro de CPF anterior para começar uma nova validação.
+  setErrors(prev => {
+    const newErrors = { ...prev };
+    delete newErrors.cpf;
+    return newErrors;
+  });
+
+  // ETAPA 2: Se o campo estiver vazio após a limpeza, não fazemos nada.
+  if (currentCpf.length === 0) {
+    return;
+  }
+
+  // ETAPA 3: Validação MATEMÁTICA primeiro. É mais rápido e eficiente.
+  if (!isValidCPF(currentCpf)) {
+    setErrors(prev => ({ ...prev, cpf: 'O CPF digitado é inválido.' }));
+    return; // PARA AQUI. Não precisamos checar duplicidade de um CPF inválido.
+  }
+
+  // ETAPA 4: Se o CPF for matematicamente válido, aí sim checamos a duplicidade na API.
+  // (Esta é a sua lógica original, totalmente preservada).
+  if (currentCpf === lastCheckedCpf.current) {
+    return; // Evita chamada de API para o mesmo CPF.
+  }
+
+  setIsCpfValidating(true);
+  lastCheckedCpf.current = currentCpf;
+  setApiError(null);
+
+  try {
+    const response = await fetch('/api/validate-cpf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cpf: currentCpf }), // Usando a variável já limpa
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Falha na validação do CPF no servidor.");
+    }
+
+    if (result.exists) {
+      setErrors(prev => ({ ...prev, cpf: 'Este CPF já está cadastrado.' }));
+    }
+    // Se não existir, não fazemos nada, pois o erro já foi limpo na Etapa 1.
+
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Erro ao validar CPF onBlur:", error.message);
+      setApiError(error.message);
+    } else {
+      console.error("Erro desconhecido ao validar CPF onBlur:", error);
+      setApiError("Ocorreu um erro inesperado ao validar o CPF.");
+    }
+  } finally {
+    setIsCpfValidating(false);
+  }
+};
+
+    const handleChange = (campo: keyof NovoAlunoData, valor: string) => {
     setErrors(prev => {
       const newErrors = { ...prev };
       delete newErrors[campo];
@@ -4748,24 +5180,25 @@ function AlunoAddModal({
     const errorResult = await onSave(dadosAluno);
     setIsSubmitting(false);
 
-    if (errorResult) {
-      if (Array.isArray(errorResult.errors)) {
-        const newErrors: Record<string, string> = {};
-        errorResult.errors.forEach((err: { field: string; error: string }) => {
-          newErrors[err.field] = err.error;
-        });
-        setErrors(newErrors);
-      } else {
-        setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
-      }
-    }
-  };
+if (errorResult) {
+  // Primeiro, verificamos se a mensagem de erro é a que esperamos para CPF duplicado.
+  if (errorResult.cpf) { // Se existe uma propriedade 'cpf' no objeto de erro
+    setErrors({ cpf: errorResult.cpf });
 
-  const isFormValid = useMemo(() => {
-    const requiredTextFieldsValid = dadosAluno.nome.trim() !== '' && dadosAluno.cpf.trim() !== '';
-    const noValidationErrors = Object.keys(errors).length === 0;
-    return requiredTextFieldsValid && noValidationErrors;
-  }, [dadosAluno, errors]);
+  // Se não for o erro de CPF, checamos se é outro erro de campo estruturado.
+  } else if (Array.isArray(errorResult.errors)) {
+    const newErrors: Record<string, string> = {};
+    errorResult.errors.forEach((err: { field: string; error: string }) => {
+      newErrors[err.field] = err.error;
+    });
+    setErrors(newErrors);
+
+  // Se não for nenhum dos anteriores, é um erro genérico.
+  } else {
+    setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
+  }
+}
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -4776,7 +5209,6 @@ function AlunoAddModal({
           <p className="subtitle-modal">Insira os dados</p>
         </div>
         <div className="modal-body">
-          {/* Campo de Nome */}
           <div className="input-group">
             <label htmlFor="aluno-add-nome">Nome Completo</label>
             <input
@@ -4789,19 +5221,24 @@ function AlunoAddModal({
             />
             {errors.nome && <span className="error-message">{errors.nome}</span>}
           </div>
-          {/* Campo de CPF */}
           <div className="input-group">
             <label htmlFor="aluno-add-cpf">CPF</label>
+            <div className="input-with-icon">
             <input
               id="aluno-add-cpf"
               type="text"
               value={dadosAluno.cpf}
               onChange={(e) => handleChange('cpf', e.target.value)}
-              // onBlur={handleCpfBlur} // Adicione a validação de CPF aqui
+              onBlur={handleCpfBlur}
               placeholder="000.000.000-00"
               className={errors.cpf ? 'invalid' : ''}
+              disabled={isCpfValidating}
             />
-            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+            {isCpfValidating && <div className="spinner"></div>}
+          </div>
+              {!isCpfValidating && errors.cpf && (
+                <span className="error-message">{errors.cpf}</span>
+              )}
           </div>
           {/* Campo de Observação */}
           <div className="input-group">
@@ -4894,64 +5331,165 @@ function AlunoEditModal({
   onClose,
   onSave,
 }: {
-  aluno: Aluno;
+  isOpen: boolean;
+  aluno: Aluno | null;
   onClose: () => void;
   onSave: (alunoAtualizado: Aluno) => Promise<Record<string, string> | null>;
 }) {
-  const [dadosEditados, setDadosEditados] = useState<Aluno>(aluno);
+  
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [dadosEditados, setDadosEditados] = useState<Aluno | null>(aluno);
+  const isFormValid = useMemo(() => {
+    if (!dadosEditados) return false;
+    const requiredTextFieldsValid = dadosEditados.nome.trim() !== '' && dadosEditados.cpf.trim() !== '';
+    const noValidationErrors = Object.keys(errors).length === 0;
+    return requiredTextFieldsValid && noValidationErrors;
+  }, [dadosEditados, errors]);
+  const [isCpfValidating, setIsCpfValidating] = useState(false);
+  const lastCheckedCpf = useRef<string | null>(null);
 
   useEffect(() => {
     // Sincroniza o estado do modal com as props iniciais do aluno
     setDadosEditados(aluno);
+    setErrors({});
   }, [aluno]);
+  
+  if (!aluno) {
+    return null;
+  }
 
-  const handleChange = (campo: keyof Aluno, valor: string) => {
+const handleCpfBlur = async () => {
+        if (!dadosEditados) {
+    return;
+  }
+  // Use o nome correto da sua variável de estado (ex: dadosPef ou dadosEditados)
+  const currentCpf = dadosEditados.cpf.trim();
+
+  // ETAPA 1: Limpa qualquer erro de CPF anterior para começar uma nova validação.
+  setErrors(prev => {
+    const newErrors = { ...prev };
+    delete newErrors.cpf;
+    return newErrors;
+  });
+
+  // ETAPA 2: Se o campo estiver vazio após a limpeza, não fazemos nada.
+  if (currentCpf.length === 0) {
+    return;
+  }
+
+  // ETAPA 3: Validação MATEMÁTICA primeiro. É mais rápido e eficiente.
+  if (!isValidCPF(currentCpf)) {
+    setErrors(prev => ({ ...prev, cpf: 'O CPF digitado é inválido.' }));
+    return; // PARA AQUI. Não precisamos checar duplicidade de um CPF inválido.
+  }
+
+  // ETAPA 4: Se o CPF for matematicamente válido, aí sim checamos a duplicidade na API.
+  // (Esta é a sua lógica original, totalmente preservada).
+  if (currentCpf === lastCheckedCpf.current) {
+    return; // Evita chamada de API para o mesmo CPF.
+  }
+
+  setIsCpfValidating(true);
+  lastCheckedCpf.current = currentCpf;
+  setApiError(null);
+
+  try {
+    const response = await fetch('/api/validate-cpf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cpf: currentCpf }), // Usando a variável já limpa
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Falha na validação do CPF no servidor.");
+    }
+
+    if (result.exists) {
+      setErrors(prev => ({ ...prev, cpf: 'Este CPF já está cadastrado.' }));
+    }
+    // Se não existir, não fazemos nada, pois o erro já foi limpo na Etapa 1.
+
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Erro ao validar CPF onBlur:", error.message);
+      setApiError(error.message);
+    } else {
+      console.error("Erro desconhecido ao validar CPF onBlur:", error);
+      setApiError("Ocorreu um erro inesperado ao validar o CPF.");
+    }
+  } finally {
+    setIsCpfValidating(false);
+  }
+};
+
+const handleChange = (campo: keyof Aluno, valor: string) => {
+    
     setErrors(prev => {
       const newErrors = { ...prev };
       delete newErrors[campo];
       return newErrors;
     });
-    setDadosEditados(dadosAtuais => ({ ...dadosAtuais, [campo]: valor }));
+    setDadosEditados(dadosAtuais => {
+    // Se não houver dados atuais, não fazemos nada (retornamos null).
+    if (!dadosAtuais) {
+      return null;
+    }
+    // Se houver, atualizamos o estado normalmente.
+    return { ...dadosAtuais, [campo]: valor };
+  });
   };
 
-  const handleSaveClick = async () => {
-    setApiError(null);
-    setErrors({});
+const handleSaveClick = async () => {
+    // 1. Guarda de segurança e limpeza de estados
+  if (!dadosEditados) return;
+  setApiError(null);
+  setErrors({});
+
+  // 2. Validação local de campos antes de submeter
+  // (Use a função de validação correta para cada modal: validateAlunoData ou validatePefData)
+  const validationErrors = validateAlunoData(dadosEditados); // ou validatePefData(dadosEditados)
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors);
+    return;
+  }
+
+  // 3. Submissão para a API
+  setIsSubmitting(true);
+  const errorResult = await onSave(dadosEditados);
+  setIsSubmitting(false);
+
+  // 4. Tratamento COMPLETO da resposta
+  if (errorResult) {
+    // Erro específico de CPF
+    if (errorResult.cpf) {
+      setErrors({ cpf: errorResult.cpf });
     
-    // 1. Valida os dados no frontend
-    const validationErrors = validateAlunoData(dadosEditados);
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
+    // Outros erros de campo em formato de array
+    } else if (Array.isArray(errorResult)) {
+      const newErrors: Record<string, string> = {};
+      errorResult.forEach((err: { field: string; error: string }) => {
+        newErrors[err.field] = err.error;
+      });
+      setErrors(newErrors);
+    
+    // Erro genérico
+    } else {
+      setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
     }
+  } else {
+    // 5. Tratamento de SUCESSO!
+    alert('Alterações salvas com sucesso!');
+    onClose(); // Fecha o modal
+  }
+};
 
-    setIsSubmitting(true);
-    // 2. Chama a função onSave do componente pai
-    const errorResult = await onSave(dadosEditados);
-    setIsSubmitting(false);
-
-    // 3. Trata a resposta e exibe erros, se houver
-    if (errorResult) {
-      if (Array.isArray(errorResult.errors)) {
-        const newErrors: Record<string, string> = {};
-        errorResult.errors.forEach((err: { field: string; error: string }) => {
-          newErrors[err.field] = err.error;
-        });
-        setErrors(newErrors);
-      } else {
-        setApiError(errorResult.error || 'Ocorreu um erro inesperado.');
-      }
-    }
-  };
-
-  const isFormValid = useMemo(() => {
-    const requiredTextFieldsValid = dadosEditados.nome.trim() !== '' && dadosEditados.cpf.trim() !== '';
-    const noValidationErrors = Object.keys(errors).length === 0;
-    return requiredTextFieldsValid && noValidationErrors;
-  }, [dadosEditados, errors]);
+  if (!dadosEditados) {
+    // Se não há dados para editar, não renderizamos o corpo do modal
+    return null;
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -4962,8 +5500,7 @@ function AlunoEditModal({
           <p className="subtitle-modal">{aluno.nome}</p>
         </div>
         <div className="modal-body">
-          {/* Campo de Nome */}
-          <div className="input-group">
+        <div className="input-group">
             <label htmlFor="aluno-edit-nome">Nome Completo</label>
             <input
               id="aluno-edit-nome"
@@ -4975,19 +5512,25 @@ function AlunoEditModal({
             />
             {errors.nome && <span className="error-message">{errors.nome}</span>}
           </div>
-          {/* Campo de CPF */}
           <div className="input-group">
             <label htmlFor="aluno-edit-cpf">CPF</label>
+            <div className="input-with-icon">
             <input
               id="aluno-edit-cpf"
               type="text"
               value={dadosEditados.cpf}
               onChange={(e) => handleChange('cpf', e.target.value)}
+              onBlur={handleCpfBlur}
               placeholder="000.000.000-00"
               className={errors.cpf ? 'invalid' : ''}
+              disabled={isCpfValidating}
             />
-            {errors.cpf && <span className="error-message">{errors.cpf}</span>}
+            {isCpfValidating && <div className="spinner"></div>}
           </div>
+              {!isCpfValidating && errors.cpf && (
+                <span className="error-message">{errors.cpf}</span>
+          )}
+        </div>
           {/* Campo de Observação */}
           <div className="input-group">
             <label htmlFor="aluno-edit-observacao">Observação</label>

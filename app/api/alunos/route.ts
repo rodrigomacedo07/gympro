@@ -1,11 +1,13 @@
+// ARQUIVO: app/api/alunos/route.ts (VERSÃO FINAL E CORRIGIDA)
+
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { isValidCPF } from '@/app/utils/validators'; // <-- PASSO 1: Importar nossa ferramenta
 
 export async function POST(request: Request) {
   try {
     const { id, nome, cpf, observacao, matricula_status } = await request.json();
 
-    // Criação de um cliente Supabase com privilégios de administrador
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -13,38 +15,44 @@ export async function POST(request: Request) {
     
     // --- LÓGICA DE EDIÇÃO ---
     if (id) {
-        // Validação básica para edição
         if (!nome || !cpf) {
             return NextResponse.json({ error: 'Nome e CPF são obrigatórios para a edição.' }, { status: 400 });
         }
         
-if (matricula_status === 'inativo') {
-    const { count, error: checkError } = await supabaseAdmin
-        .from('sessoes_ativas')
-        .select('id', { count: 'exact', head: true }) // Apenas verifica a existência, muito eficiente
-        .eq('aluno_id', id);
+        // =======================================================================
+        // PASSO 2: ADICIONAR VALIDAÇÃO MATEMÁTICA NO FLUXO DE EDIÇÃO
+        // =======================================================================
+        if (!isValidCPF(cpf)) {
+            return NextResponse.json({ 
+              errors: [{ field: 'cpf', error: 'O CPF fornecido é inválido.' }]
+            }, { status: 400 });
+        }
 
-    if (checkError) {
-        console.error("Erro ao checar sessão ativa:", checkError);
-        throw checkError;
-    }
+        if (matricula_status === 'inativo') {
+            const { count, error: checkError } = await supabaseAdmin
+                .from('sessoes_ativas')
+                .select('id', { count: 'exact', head: true })
+                .eq('aluno_id', id);
 
-    // Se a contagem for maior que 0, significa que o aluno tem uma sessão ativa
-    if (count && count > 0) {
-        return NextResponse.json(
-            { error: 'Este aluno está em uma sessão de treino ativa e não pode ser inativado.' },
-            { status: 409 } // 409 Conflict
-        );
-    }
-}
+            if (checkError) {
+                console.error("Erro ao checar sessão ativa:", checkError);
+                throw checkError;
+            }
 
-        // Verificação de CPF duplicado (se o CPF foi alterado)
+            if (count && count > 0) {
+                return NextResponse.json(
+                    { error: 'Este aluno está em uma sessão de treino ativa e não pode ser inativado.' },
+                    { status: 409 }
+                );
+            }
+        }
+
         const cpfLimpo = cpf.replace(/[.\-]/g, '');
         const { data: existingAluno, error: checkError } = await supabaseAdmin
             .from('alunos')
             .select('id')
             .eq('cpf', cpfLimpo)
-            .neq('id', id) // Ignora o próprio aluno
+            .neq('id', id)
             .maybeSingle();
 
         if (checkError && checkError.code !== 'PGRST116') {
@@ -58,15 +66,9 @@ if (matricula_status === 'inativo') {
             }, { status: 409 });
         }
         
-        // Atualiza os dados do aluno
         const { data, error } = await supabaseAdmin
             .from('alunos')
-            .update({ 
-              nome, 
-              cpf: cpfLimpo, 
-              observacao, 
-              matricula_status 
-            })
+            .update({ nome, cpf: cpfLimpo, observacao, matricula_status })
             .eq('id', id)
             .select()
             .single();
@@ -79,13 +81,20 @@ if (matricula_status === 'inativo') {
         return NextResponse.json({ message: 'Aluno atualizado com sucesso!', aluno: data });
     }
     
-    // --- LÓGICA DE CRIAÇÃO (EXISTENTE) ---
-    // (A lógica de criação que já havíamos implementado, inalterada)
-    
+    // --- LÓGICA DE CRIAÇÃO ---
     if (!nome || !cpf) {
       return NextResponse.json({ error: 'Nome e CPF são obrigatórios.' }, { status: 400 });
     }
     
+    // =======================================================================
+    // PASSO 3: ADICIONAR VALIDAÇÃO MATEMÁTICA NO FLUXO DE CRIAÇÃO
+    // =======================================================================
+    if (!isValidCPF(cpf)) {
+        return NextResponse.json({ 
+          errors: [{ field: 'cpf', error: 'O CPF fornecido é inválido.' }]
+        }, { status: 400 });
+    }
+
     const cpfLimpo = cpf.replace(/[.\-]/g, '');
 
     const { data: existingPef, error: pefError } = await supabaseAdmin

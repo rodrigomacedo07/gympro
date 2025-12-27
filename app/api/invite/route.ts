@@ -1,14 +1,27 @@
-// ARQUIVO FINAL E DEFINITIVO: app/api/invite/route.ts
+// ARQUIVO FINAL E DEFINITIVO: app/api/invite/route.ts (VERSÃO SEGURA)
 
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { isValidCPF } from '@/app/utils/validators'; // <-- PASSO 1: Importar nossa ferramenta
 
 export async function POST(request: Request) {
   try {
     const { nome, email, cpf, cref, is_estagiario } = await request.json();
 
+    // Validação de campos básicos
     if (!email || !nome || !cpf || (!is_estagiario && !cref)) {
       return NextResponse.json({ errors: [{ error: 'Dados incompletos.' }] }, { status: 400 });
+    }
+
+    // =======================================================================
+    // PASSO 2: VALIDAÇÃO MATEMÁTICA DO CPF
+    // Nossa nova linha de defesa principal.
+    // =======================================================================
+    if (!isValidCPF(cpf)) {
+      return NextResponse.json(
+        { errors: [{ field: 'cpf', error: 'O CPF fornecido é inválido.' }] },
+        { status: 400 }
+      );
     }
 
     const supabaseAdmin = createClient(
@@ -16,11 +29,9 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
     
-    // --- VALIDAÇÃO PARALELA CORRIGIDA ---
+    // --- VALIDAÇÃO PARALELA (seu código original, já ótimo) ---
     const validationErrors = [];
-
     const checkCpfPromise = supabaseAdmin.from('profiles').select('id').eq('cpf', cpf).single();
-    // Chamamos nossa nova função customizada 'email_exists' via RPC (Remote Procedure Call)
     const checkEmailPromise = supabaseAdmin.rpc('email_exists', { email_to_check: email });
 
     const [cpfResult, emailResult] = await Promise.all([checkCpfPromise, checkEmailPromise]);
@@ -48,15 +59,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ message: 'Profissional convidado e perfil criado com sucesso!' });
 
-} catch (error) { // Removido o tipo 'any'
-  // Verificamos se o que foi capturado é um objeto de Erro padrão
-  if (error instanceof Error) {
-    console.error("ERRO GERAL NA API:", error.message);
-    // Usamos a mensagem do erro que foi lançado
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("ERRO GERAL NA API de Convite:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    console.error("ERRO GERAL E INESPERADO NA API de Convite:", error);
+    return NextResponse.json({ error: "Ocorreu um erro inesperado no servidor." }, { status: 500 });
   }
-  // Se, por algum motivo, não for um Erro, usamos uma mensagem genérica
-  console.error("ERRO GERAL E INESPERADO NA API:", error);
-  return NextResponse.json({ error: "Ocorreu um erro inesperado no servidor." }, { status: 500 });
-}
 }
