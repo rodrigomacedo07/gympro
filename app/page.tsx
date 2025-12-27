@@ -892,7 +892,7 @@ const [treinadores, setTreinadores] = useState<PEF[]>([]);
 const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
 const [masterAlunosList, setMasterAlunosList] = useState<Aluno[]>([]); // Nossa lista mestra, com TODOS os alunos.
 const [viewState, setViewState] = useState<ViewState>({ type: 'dashboard', alunoId: null });
-const [alunos, setAlunos] = useState<Aluno[]>([]);
+
 
 
 /* --- ESTADOS DE UI (Controle de Visão e Filtros) --- */
@@ -1466,7 +1466,7 @@ useEffect(() => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, setActiveSessions]);
+  }, [setActiveSessions]);
 
 
 // useEffect para escutar mudanças nos exercícios de um treino
@@ -1480,7 +1480,7 @@ useEffect(() => {
         console.log('REALTIME: Recebida atualização de exercício:', payload);
         const exercicioAtualizado = payload.new as TreinoExercicio;
 
-        setAlunos((alunosAtuais: Aluno[]) => // <<< TIPO ADICIONADO
+        setMasterAlunosList((alunosAtuais: Aluno[]) => // <<< TIPO ADICIONADO
           alunosAtuais.map((aluno: Aluno) => { // <<< TIPO ADICIONADO
             const treinoIndex = aluno.treino.findIndex((t: Treino) => t.id === exercicioAtualizado.treino_id); // <<< TIPO ADICIONADO
             
@@ -1504,7 +1504,7 @@ useEffect(() => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [supabase, setAlunos]);
+  }, [supabase, setMasterAlunosList]);
 
 
 
@@ -1836,7 +1836,7 @@ setMasterAlunosList(prev => prev.map(a => a.id === alunoId ? { ...a, ritmo: unde
 setViewState(prev => ({ ...prev, type: 'dashboard' }));
 
 console.info('[FINISH] concluído com sucesso');
-} catch (e) { // Removido o tipo 'any'
+} catch (e: unknown) { // Removido o tipo 'any'
     console.error('[FINISH] erro ao finalizar treino', e);
     
     // Adicionamos uma verificação para extrair a mensagem de forma segura
@@ -3364,7 +3364,7 @@ function PefEditModal({
   isOpen: boolean;
   pef: PEF | null;
   onClose: () => void;
-  onSave: (pefAtualizado: PEF) => Promise<any | null>;
+  onSave: (pefAtualizado: PEF) => Promise<{ [key: string]: string | undefined } | null>;
 }) {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
