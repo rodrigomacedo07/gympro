@@ -1,30 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GymPro – Digitalizando a Execução do Treino em Academias
 
-## Getting Started
+O **GymPro** é uma plataforma de gestão e atendimento *mobile-first* dedicada exclusivamente ao Profissional de Educação Física (PEF). Sua missão é digitalizar o atendimento em academias de acompanhamento próximo, substituindo processos físicos por dados acionáveis que elevam a qualidade percebida pelo aluno e a eficiência operacional.
 
-First, run the development server:
+## 🎯 O Problema (Product Discovery)
 
-```bash
-pnpm dev
-```
+Através de técnicas de *shadowing* e entrevistas, identifiquei dores críticas no controle manual via fichas de papel:
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+* **Alta Carga Cognitiva:** Profissionais sobrecarregados ao gerenciar múltiplas fichas físicas simultaneamente.
+* **Ineficiência Operacional:** Atrasos na localização de fichas e perda de tempo no registro manual de cargas e ajustes.
+* **Falta de Inteligência de Dados:** Ausência de indicadores objetivos para gerir a evolução real do aluno.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 💡 Hipóteses de Produto
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+* **H1:** A visibilidade em tempo real do andamento do treino otimiza a gestão de atenção do profissional no salão.
+* **H2:** A captura de dados durante a execução gera indicadores de gestão sem esforço adicional.
+* **H3:** Uma abordagem *mobile-first* garante a adesão do profissional que atua em constante movimento.
 
-## Learn More
+## 🏗️ Arquitetura e Decisões Técnicas (MVP)
 
-To learn more about Next.js, take a look at the following resources:
+Como PM, estabeleci diretrizes para suportar **10 professores atendendo 5 alunos simultaneamente** (50 sessões ativas com média de 15 exercícios cada):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+* **Stack Estratégica:** Next.js (App Router) e Supabase (PostgreSQL) para garantir sincronização *real-time* e baixo custo operacional.
+* **Segurança e Governança:** Implementação de **Row Level Security (RLS)** para proteção de dados e **Server-side validation** para regras críticas, como a unicidade de CPFs.
+* **Resiliência de Dados:** Estratégia de **Soft Delete** em registros críticos para assegurar a preservação do histórico de evolução do aluno.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📏 Regras de Negócio Implementadas
 
-## Deploy on Vercel
+* **Gestão de Sessão:** Treinos tratados como "Sessões Ativas" (janela média de 60 min), permitindo alternância entre alunos sem perda de estado.
+* **Cálculo de Ritmo (Pace):** Lógica para registro de ritmo de treino e histórico de cargas para análise de progressão de volume.
+* **Validação de Fluxo:** Garantia de que o status do treino seja atualizado instantaneamente entre o professor e o sistema.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🛣️ Metodologia e Qualidade (DoD)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+O desenvolvimento segue um rigoroso critério de **Definition of Done (DoD)**:
+
+1. **Discovery:** Mapeamento da dor do usuário principal (PEF).
+2. **Design & UI:** Prototipagem focada em usabilidade "mão na massa" (mobile-first).
+3. **Data Model:** Modelagem de esquemas no Supabase que suportem a carga operacional prevista.
+4. **Deploy & QA:** Validação de fluxos ponta a ponta em ambiente de produção (Vercel).
+
+## 🚀 Demonstração e Acesso
+
+* **Link do App:** [https://gympro-seven.vercel.app](https://gympro-seven.vercel.app)
+* **Status:** MVP - Em evolução contínua.
+
+### 🧪 Guia para Recrutadores
+
+1. Acesse o link e explore a interface otimizada para dispositivos móveis.
+2. Observe a minimização de cliques para o registro de carga e ritmo, priorizando a dinâmica do treino ao vivo.
+
+---
+
+## 🤝 Contato
+
+Este projeto demonstra minha capacidade de unir visão de negócio, UX e governança técnica.
+
+* **GitHub:** [rodrigomacedo07](https://github.com/rodrigomacedo07)
+* **Portfolio:** [Acesse meu Case Completo](https://portfolio-rm7.lovable.app/case/gympro)
